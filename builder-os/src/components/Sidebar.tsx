@@ -31,7 +31,7 @@ export function Sidebar() {
     <aside
       style={{
         width: "var(--sidebar-w)",
-        background: "rgba(7,9,15,0.95)",
+        background: "rgba(10,13,20,0.95)",
         borderRight: "1px solid var(--border)",
         position: "fixed",
         top: 0,
@@ -63,7 +63,7 @@ export function Sidebar() {
               flexShrink: 0,
             }}
           >
-            <Terminal size={15} color="#07090f" strokeWidth={2.5} />
+            <Terminal size={15} color="#ffffff" strokeWidth={2.5} />
           </div>
           <div>
             <div
