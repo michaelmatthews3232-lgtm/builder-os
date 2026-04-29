@@ -9,6 +9,7 @@ import {
   Lightbulb,
   Zap,
   Terminal,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/ideas", label: "Ideas", icon: Lightbulb },
   { href: "/today", label: "Today", icon: Zap },
+  { href: "/plan", label: "Game Plan", icon: Sparkles },
 ];
 
 export function Sidebar() {

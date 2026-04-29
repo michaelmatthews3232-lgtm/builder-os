@@ -114,6 +114,29 @@ export interface KnowledgeItem {
   created_at: string;
 }
 
+export type GoalType = "short_term" | "long_term";
+
+export interface Goal {
+  id: string;
+  title: string;
+  type: GoalType;
+  created_at: string;
+}
+
+export type PlanItemStatus = "todo" | "done" | "outsourced";
+
+export interface PlanItem {
+  id: string;
+  week_start: string;
+  title: string;
+  description: string | null;
+  project_name: string | null;
+  status: PlanItemStatus;
+  outsource_to: string | null;
+  priority: number;
+  created_at: string;
+}
+
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: "Idea",
   planned: "Planned",
