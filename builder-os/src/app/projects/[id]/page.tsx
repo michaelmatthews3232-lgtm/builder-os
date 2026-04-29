@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewTaskModal } from "@/components/NewTaskModal";
+import { KnowledgeTab } from "@/components/KnowledgeTab";
 import type { Project, Task, Contractor, TaskStatus, ProjectStatus } from "@/lib/types";
 import {
   ArrowLeft,
@@ -31,7 +32,7 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "contractors">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "contractors" | "vault">("tasks");
   const [showNewTask, setShowNewTask] = useState(false);
   const [editingLinks, setEditingLinks] = useState(false);
   const [linkForm, setLinkForm] = useState<Record<string, string>>({});
@@ -192,7 +193,7 @@ export default function ProjectDetailPage() {
       {/* Tabs */}
       <div>
         <div className="flex items-center gap-0" style={{ borderBottom: "1px solid var(--border)", marginBottom: 20 }}>
-          {(["tasks", "links", "contractors"] as const).map((tab) => (
+          {(["tasks", "links", "contractors", "vault"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -334,6 +335,11 @@ export default function ProjectDetailPage() {
         {/* Contractors Tab */}
         {activeTab === "contractors" && (
           <ContractorsTab projectId={id} contractors={contractors} onUpdate={fetchData} />
+        )}
+
+        {/* Vault Tab */}
+        {activeTab === "vault" && (
+          <KnowledgeTab projectId={id} />
         )}
       </div>
 

@@ -91,6 +91,17 @@ export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
   low: 3,
 };
 
+export type KnowledgeCategory = "credential" | "api_key" | "url" | "payment" | "account" | "note";
+
+export interface KnowledgeItem {
+  id: string;
+  project_id: string;
+  label: string;
+  value: string;
+  category: KnowledgeCategory;
+  created_at: string;
+}
+
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: "Idea",
   planned: "Planned",

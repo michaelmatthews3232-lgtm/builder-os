@@ -68,6 +68,17 @@ create table if not exists contractors (
   created_at  timestamptz not null default now()
 );
 
+-- ─── PROJECT KNOWLEDGE VAULT ─────────────────────────────────
+create table if not exists project_knowledge (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid references projects on delete cascade not null,
+  label       text not null,
+  value       text not null,
+  category    text not null default 'note'
+                check (category in ('credential','api_key','url','payment','account','note')),
+  created_at  timestamptz not null default now()
+);
+
 -- ─── UPDATED_AT TRIGGER ──────────────────────────────────────
 create or replace function update_updated_at()
 returns trigger as $$
