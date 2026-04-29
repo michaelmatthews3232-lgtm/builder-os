@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { KnowledgeTab } from "@/components/KnowledgeTab";
-import type { Project, Task, Contractor, TaskStatus, ProjectStatus } from "@/lib/types";
+import type { Project, Task, Contractor, ContractorUpdate, TaskStatus, ProjectStatus } from "@/lib/types";
 import {
   ArrowLeft,
   Plus,
@@ -22,6 +22,10 @@ import {
   X,
   Trash2,
   UserCircle,
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  DollarSign,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -512,6 +516,8 @@ function LinkRow({
   );
 }
 
+const PLATFORMS = ["Upwork", "Fiverr", "Direct", "Toptal", "LinkedIn", "Other"];
+
 function ContractorsTab({
   projectId,
   contractors,
@@ -521,22 +527,52 @@ function ContractorsTab({
   contractors: Contractor[];
   onUpdate: () => void;
 }) {
-  const [form, setForm] = useState({ name: "", role: "", status: "active" });
+  const emptyForm = { name: "", role: "", platform: "", hourly_rate: "", email: "", status: "active" };
+  const [form, setForm] = useState(emptyForm);
   const [adding, setAdding] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [updates, setUpdates] = useState<Record<string, ContractorUpdate[]>>({});
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
+  const [addingNote, setAddingNote] = useState<string | null>(null);
+
+  const fetchUpdates = async (contractorId: string) => {
+    const { data } = await supabase
+      .from("contractor_updates")
+      .select("*")
+      .eq("contractor_id", contractorId)
+      .order("created_at", { ascending: false });
+    setUpdates((prev) => ({ ...prev, [contractorId]: (data as ContractorUpdate[]) ?? [] }));
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        if (!updates[id]) fetchUpdates(id);
+      }
+      return next;
+    });
+  };
 
   const handleAdd = async () => {
     if (!form.name.trim()) return;
-    setLoading(true);
+    setSaving(true);
     await supabase.from("contractors").insert({
       project_id: projectId,
       name: form.name.trim(),
       role: form.role.trim() || null,
+      platform: form.platform || null,
+      hourly_rate: form.hourly_rate ? parseFloat(form.hourly_rate) : null,
+      email: form.email.trim() || null,
       status: form.status,
     });
-    setLoading(false);
+    setSaving(false);
     setAdding(false);
-    setForm({ name: "", role: "", status: "active" });
+    setForm(emptyForm);
     onUpdate();
   };
 
@@ -544,6 +580,29 @@ function ContractorsTab({
     await supabase.from("contractors").delete().eq("id", id);
     onUpdate();
   };
+
+  const addNote = async (contractorId: string) => {
+    const note = noteInputs[contractorId]?.trim();
+    if (!note) return;
+    await supabase.from("contractor_updates").insert({
+      contractor_id: contractorId,
+      project_id: projectId,
+      note,
+    });
+    setNoteInputs((prev) => ({ ...prev, [contractorId]: "" }));
+    setAddingNote(null);
+    fetchUpdates(contractorId);
+  };
+
+  const deleteNote = async (contractorId: string, noteId: string) => {
+    await supabase.from("contractor_updates").delete().eq("id", noteId);
+    fetchUpdates(contractorId);
+  };
+
+  const statusColor = (s: string) =>
+    s === "active" ? { bg: "rgba(52,211,153,0.1)", color: "#34d399" } :
+    s === "completed" ? { bg: "rgba(99,102,241,0.1)", color: "#818cf8" } :
+    { bg: "rgba(107,114,128,0.1)", color: "#6b7280" };
 
   return (
     <div>
@@ -555,20 +614,53 @@ function ContractorsTab({
       </div>
 
       {adding && (
-        <div className="card" style={{ padding: 18, marginBottom: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             <div>
-              <label>Name</label>
-              <input className="input-base mt-1" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <label>Name *</label>
+              <input className="input-base mt-1" placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
             </div>
             <div>
               <label>Role</label>
               <input className="input-base mt-1" placeholder="e.g. iOS Dev, Designer" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} />
             </div>
-            <div className="flex gap-2">
-              <button className="btn-ghost" onClick={() => setAdding(false)}>Cancel</button>
-              <button className="btn-primary" onClick={handleAdd} disabled={loading}>Add</button>
+            <div>
+              <label>Platform</label>
+              <select className="input-base mt-1" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+                <option value="">Select platform...</option>
+                {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
             </div>
+            <div>
+              <label>Hourly Rate ($/hr)</label>
+              <input
+                className="input-base mt-1"
+                placeholder="0.00"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.hourly_rate}
+                onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
+              />
+            </div>
+            <div>
+              <label>Email</label>
+              <input className="input-base mt-1" placeholder="contractor@email.com" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div>
+              <label>Status</label>
+              <select className="input-base mt-1" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => { setAdding(false); setForm(emptyForm); }}>Cancel</button>
+            <button className="btn-primary" onClick={handleAdd} disabled={saving || !form.name.trim()}>
+              {saving ? "Saving..." : "Add Contractor"}
+            </button>
           </div>
         </div>
       )}
@@ -579,33 +671,103 @@ function ContractorsTab({
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {contractors.map((c) => (
-            <div key={c.id} className="card" style={{ padding: "12px 16px" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
-                  {c.role && <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 10 }}>{c.role}</span>}
+          {contractors.map((c) => {
+            const sc = statusColor(c.status);
+            const isOpen = expanded.has(c.id);
+            const contractorUpdates = updates[c.id] ?? [];
+            return (
+              <div key={c.id} className="card" style={{ overflow: "hidden" }}>
+                <div style={{ padding: "13px 16px", cursor: "pointer" }} onClick={() => toggleExpand(c.id)}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
+                          {c.role && <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.role}</span>}
+                          {c.platform && (
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4 }}>
+                              {c.platform}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          {c.email && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.email}</span>}
+                          {c.hourly_rate != null && (
+                            <span className="font-mono" style={{ fontSize: 11, color: "#34d399", display: "flex", alignItems: "center", gap: 2 }}>
+                              <DollarSign size={10} />{c.hourly_rate}/hr
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, fontFamily: "JetBrains Mono, monospace", textTransform: "uppercase", background: sc.bg, color: sc.color }}>
+                        {c.status}
+                      </span>
+                      <button onClick={() => remove(c.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span style={{
-                    fontSize: 10,
-                    padding: "2px 8px",
-                    borderRadius: 99,
-                    background: c.status === "active" ? "rgba(52,211,153,0.1)" : "rgba(107,114,128,0.1)",
-                    color: c.status === "active" ? "#34d399" : "#6b7280",
-                    fontWeight: 600,
-                    fontFamily: "JetBrains Mono, monospace",
-                    textTransform: "uppercase",
-                  }}>
-                    {c.status}
-                  </span>
-                  <button onClick={() => remove(c.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+
+                {isOpen && (
+                  <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px", background: "rgba(255,255,255,0.015)" }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "flex", alignItems: "center", gap: 5 }}>
+                        <MessageSquare size={11} /> Progress Notes
+                      </span>
+                      {addingNote !== c.id && (
+                        <button className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setAddingNote(c.id)}>
+                          <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Add Note
+                        </button>
+                      )}
+                    </div>
+
+                    {addingNote === c.id && (
+                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                        <textarea
+                          className="input-base"
+                          placeholder="Progress update, deliverable status, blocker, etc."
+                          value={noteInputs[c.id] ?? ""}
+                          onChange={(e) => setNoteInputs((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                          style={{ minHeight: 60, fontSize: 12, flex: 1 }}
+                          autoFocus
+                        />
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <button className="btn-primary" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => addNote(c.id)}>Save</button>
+                          <button className="btn-ghost" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => setAddingNote(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {contractorUpdates.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No updates yet. Add a note to track progress.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {contractorUpdates.map((u) => (
+                          <div key={u.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>{u.note}</p>
+                              <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, display: "block" }}>
+                                {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                            <button onClick={() => deleteNote(c.id, u.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0, alignSelf: "flex-start" }}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

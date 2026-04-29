@@ -72,6 +72,17 @@ export interface Contractor {
   name: string;
   role: string | null;
   status: ContractorStatus;
+  platform: string | null;
+  hourly_rate: number | null;
+  email: string | null;
+  created_at: string;
+}
+
+export interface ContractorUpdate {
+  id: string;
+  contractor_id: string;
+  project_id: string;
+  note: string;
   created_at: string;
 }
 
@@ -99,6 +110,7 @@ export interface KnowledgeItem {
   label: string;
   value: string;
   category: KnowledgeCategory;
+  notes: string | null;
   created_at: string;
 }
 

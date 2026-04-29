@@ -24,6 +24,7 @@ interface ExtractedPreviewItem {
   label: string;
   value: string;
   category: KnowledgeCategory;
+  notes?: string;
   selected: boolean;
 }
 
@@ -36,9 +37,9 @@ export function KnowledgeTab({ projectId }: Props) {
   const [loading, setLoading] = useState(true);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ label: "", value: "", category: "note" as KnowledgeCategory });
+  const [editForm, setEditForm] = useState({ label: "", value: "", category: "note" as KnowledgeCategory, notes: "" });
   const [adding, setAdding] = useState(false);
-  const [newItem, setNewItem] = useState({ label: "", value: "", category: "note" as KnowledgeCategory });
+  const [newItem, setNewItem] = useState({ label: "", value: "", category: "note" as KnowledgeCategory, notes: "" });
   const [dragging, setDragging] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [preview, setPreview] = useState<ExtractedPreviewItem[] | null>(null);
@@ -73,7 +74,7 @@ export function KnowledgeTab({ projectId }: Props) {
 
   const startEdit = (item: KnowledgeItem) => {
     setEditingId(item.id);
-    setEditForm({ label: item.label, value: item.value, category: item.category });
+    setEditForm({ label: item.label, value: item.value, category: item.category, notes: item.notes ?? "" });
   };
 
   const saveEdit = async () => {
@@ -82,6 +83,7 @@ export function KnowledgeTab({ projectId }: Props) {
       label: editForm.label.trim(),
       value: editForm.value.trim(),
       category: editForm.category,
+      notes: editForm.notes.trim() || null,
     }).eq("id", editingId);
     setEditingId(null);
     fetchItems();
@@ -94,8 +96,9 @@ export function KnowledgeTab({ projectId }: Props) {
       label: newItem.label.trim(),
       value: newItem.value.trim(),
       category: newItem.category,
+      notes: newItem.notes.trim() || null,
     });
-    setNewItem({ label: "", value: "", category: "note" });
+    setNewItem({ label: "", value: "", category: "note", notes: "" });
     setAdding(false);
     fetchItems();
   };
@@ -155,6 +158,7 @@ export function KnowledgeTab({ projectId }: Props) {
         label: i.label,
         value: i.value,
         category: i.category,
+        notes: i.notes ?? null,
       }))
     );
     setPreview(null);
@@ -290,6 +294,11 @@ export function KnowledgeTab({ projectId }: Props) {
                     >
                       {item.value}
                     </span>
+                    {item.notes && (
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, display: "block", fontStyle: "italic" }}>
+                        {item.notes}
+                      </span>
+                    )}
                   </div>
                 </label>
               );
@@ -368,6 +377,15 @@ export function KnowledgeTab({ projectId }: Props) {
               style={{ minHeight: 60 }}
             />
           </div>
+          <div>
+            <label>Purpose <span style={{ textTransform: "none", fontSize: 10, fontWeight: 400, color: "var(--text-muted)" }}>(optional — what is this used for?)</span></label>
+            <input
+              className="input-base mt-1"
+              placeholder="e.g. Handles all payment processing — changing this breaks checkout"
+              value={newItem.notes}
+              onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })}
+            />
+          </div>
         </div>
       )}
 
@@ -421,6 +439,13 @@ export function KnowledgeTab({ projectId }: Props) {
                             onChange={(e) => setEditForm({ ...editForm, value: e.target.value })}
                             style={{ fontSize: 12, padding: "6px 10px", minHeight: 52 }}
                           />
+                          <input
+                            className="input-base"
+                            placeholder="Purpose — what is this used for? (optional)"
+                            value={editForm.notes}
+                            onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                            style={{ fontSize: 12, padding: "6px 10px" }}
+                          />
                           <div className="flex justify-end gap-2">
                             <button className="btn-ghost" onClick={() => setEditingId(null)} style={{ fontSize: 11, padding: "5px 10px" }}>Cancel</button>
                             <button className="btn-primary" onClick={saveEdit} style={{ fontSize: 11, padding: "5px 10px" }}>Save</button>
@@ -429,9 +454,14 @@ export function KnowledgeTab({ projectId }: Props) {
                       ) : (
                         <div className="flex items-start gap-3">
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 3 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 1 }}>
                               {item.label}
                             </div>
+                            {item.notes && (
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontStyle: "italic", lineHeight: 1.4 }}>
+                                {item.notes}
+                              </div>
+                            )}
                             <div
                               className="font-mono"
                               style={{
