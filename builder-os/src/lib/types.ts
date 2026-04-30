@@ -25,6 +25,8 @@ export interface ExternalLinks {
   other_tools: ExternalTool[];
 }
 
+export type ProjectEntity = "llc" | "personal" | "unknown";
+
 export interface Project {
   id: string;
   user_id: string | null;
@@ -32,6 +34,7 @@ export interface Project {
   description: string | null;
   category: string | null;
   status: ProjectStatus;
+  entity: ProjectEntity;
   revenue_monthly: number;
   external_links: ExternalLinks;
   external_event_sources: unknown[];
@@ -134,6 +137,33 @@ export interface PlanItem {
   status: PlanItemStatus;
   outsource_to: string | null;
   priority: number;
+  created_at: string;
+}
+
+export interface LLCProfile {
+  id: string;
+  name: string;
+  ein: string | null;
+  email: string | null;
+  bank_name: string | null;
+  hosting_provider: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ExpenseCategory = "hosting" | "ai_tools" | "subscriptions" | "domain" | "contractor" | "other";
+export type BillingCycle = "monthly" | "annual" | "one_time";
+
+export interface Expense {
+  id: string;
+  name: string;
+  amount: number;
+  category: ExpenseCategory;
+  billing_cycle: BillingCycle;
+  project_id: string | null;
+  notes: string | null;
+  active: boolean;
   created_at: string;
 }
 
