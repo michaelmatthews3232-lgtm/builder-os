@@ -86,7 +86,7 @@ export interface Idea {
 
 export interface Contractor {
   id: string;
-  project_id: string;
+  project_id: string | null;
   name: string;
   role: string | null;
   status: ContractorStatus;

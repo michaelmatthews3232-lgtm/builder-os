@@ -803,7 +803,9 @@ function ContractorsTab({
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
   const [addingNote, setAddingNote] = useState<string | null>(null);
   const [addingPayment, setAddingPayment] = useState<string | null>(null);
+  const [confirmDeletePayment, setConfirmDeletePayment] = useState<string | null>(null);
   const [paymentForm, setPaymentForm] = useState({ amount: "", paid_date: new Date().toISOString().split("T")[0], notes: "" });
+  const [assigning, setAssigning] = useState<string | null>(null);
 
   const fetchUpdates = async (contractorId: string) => {
     const { data } = await supabase
@@ -856,14 +858,27 @@ function ContractorsTab({
   };
 
   const fetchLibrary = async () => {
-    const { data } = await supabase.from("contractors").select("*").is("project_id", null).order("name");
-    setLibraryContractors((data as Contractor[]) ?? []);
+    // Show all contractors not currently on this project (unassigned OR on other projects)
+    const { data } = await supabase
+      .from("contractors")
+      .select("*, project:projects(id, name)")
+      .or(`project_id.is.null,project_id.neq.${projectId}`)
+      .order("name");
+    setLibraryContractors((data as (Contractor & { project?: { id: string; name: string } | null })[]) ?? []);
   };
 
   const assignFromLibrary = async (contractorId: string) => {
-    await supabase.from("contractors").update({ project_id: projectId, status: "active" }).eq("id", contractorId);
-    setShowLibrary(false);
-    setLibraryContractors([]);
+    setAssigning(contractorId);
+    const { error } = await supabase
+      .from("contractors")
+      .update({ project_id: projectId, status: "active" })
+      .eq("id", contractorId);
+    if (!error) {
+      setShowLibrary(false);
+      setLibraryContractors([]);
+      setLibrarySearch("");
+    }
+    setAssigning(null);
     onUpdate();
   };
 
@@ -956,29 +971,45 @@ function ContractorsTab({
           />
           {libraryContractors.length === 0 ? (
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-              No saved contractors in library. Contractors you unassign from projects will appear here.
+              No other contractors found. Add a new one above or unassign one from another project first.
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {libraryContractors
                 .filter((c) => !librarySearch || c.name.toLowerCase().includes(librarySearch.toLowerCase()) || (c.role ?? "").toLowerCase().includes(librarySearch.toLowerCase()))
-                .map((c) => (
-                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
-                      {c.role && <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 8 }}>{c.role}</span>}
-                      {c.platform && <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4, marginLeft: 6 }}>{c.platform}</span>}
-                      {c.hourly_rate != null && <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>${c.hourly_rate}/hr</span>}
+                .map((c) => {
+                  const withProject = c as Contractor & { project?: { id: string; name: string } | null };
+                  const isOnOtherProject = withProject.project != null;
+                  return (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
+                        {c.role && <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 8 }}>{c.role}</span>}
+                        {c.platform && <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4, marginLeft: 6 }}>{c.platform}</span>}
+                        {c.hourly_rate != null && <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>${c.hourly_rate}/hr</span>}
+                        {isOnOtherProject && (
+                          <span style={{ fontSize: 10, color: "#fbbf24", background: "rgba(251,191,36,0.1)", padding: "1px 7px", borderRadius: 4, marginLeft: 8, fontWeight: 600 }}>
+                            on {withProject.project!.name}
+                          </span>
+                        )}
+                        {!isOnOtherProject && (
+                          <span style={{ fontSize: 10, color: "var(--accent)", background: "var(--accent-dim)", padding: "1px 7px", borderRadius: 4, marginLeft: 8, fontWeight: 600 }}>
+                            unassigned
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        className="btn-primary"
+                        style={{ fontSize: 11, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}
+                        onClick={() => assignFromLibrary(c.id)}
+                        disabled={assigning === c.id}
+                      >
+                        {assigning === c.id ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : null}
+                        {assigning === c.id ? "Assigning..." : isOnOtherProject ? "Move Here" : "Assign"}
+                      </button>
                     </div>
-                    <button
-                      className="btn-primary"
-                      style={{ fontSize: 11, padding: "5px 12px" }}
-                      onClick={() => assignFromLibrary(c.id)}
-                    >
-                      Assign to Project
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           )}
         </div>
@@ -1239,9 +1270,26 @@ function ContractorsTab({
                                   <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
                                     {new Date(p.paid_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
-                                  <button onClick={() => deletePayment(c.id, p.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                                    <Trash2 size={12} />
-                                  </button>
+                                  {confirmDeletePayment === p.id ? (
+                                    <div className="flex items-center gap-1" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", borderRadius: 5, padding: "2px 6px" }}>
+                                      <span style={{ fontSize: 10, color: "#f87171" }}>Delete?</span>
+                                      <button
+                                        onClick={() => { deletePayment(c.id, p.id); setConfirmDeletePayment(null); }}
+                                        style={{ fontSize: 10, fontWeight: 700, color: "#f87171", background: "none", border: "none", cursor: "pointer", padding: "0 3px" }}
+                                      >Yes</button>
+                                      <button
+                                        onClick={() => setConfirmDeletePayment(null)}
+                                        style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+                                      ><X size={10} /></button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => setConfirmDeletePayment(p.id)}
+                                      style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
                                 </div>
                               ))}
                               <div style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: "var(--text-primary)", textAlign: "right" }}>
