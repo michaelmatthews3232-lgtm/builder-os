@@ -26,6 +26,9 @@ import {
   ChevronRight,
   MessageSquare,
   DollarSign,
+  Loader2,
+  GitCommit,
+  AlertCircle,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -333,6 +336,9 @@ export default function ProjectDetailPage() {
                 ))}
               </div>
             </div>
+
+            {/* Live integration status */}
+            <LiveIntegrationStatus project={project} />
           </div>
         )}
 
@@ -768,6 +774,162 @@ function ContractorsTab({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Live Integration Status ───────────────────────────────────────────────────
+
+function LiveIntegrationStatus({ project }: { project: Project }) {
+  const githubUrl = project.external_links?.github_repo_url;
+  const deployUrl = project.external_links?.deployment_url;
+
+  const [githubData, setGithubData] = useState<Record<string, unknown> | null>(null);
+  const [vercelData, setVercelData] = useState<Record<string, unknown> | null>(null);
+  const [netlifyData, setNetlifyData] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    const calls: Promise<void>[] = [];
+
+    if (githubUrl) {
+      calls.push(
+        fetch("/api/integrations/github", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoUrl: githubUrl }),
+        }).then((r) => r.json()).then((d) => { if (!d.error) setGithubData(d); }).catch(() => {})
+      );
+    }
+
+    if (deployUrl) {
+      calls.push(
+        fetch("/api/integrations/vercel", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deploymentUrl: deployUrl, projectName: project.name }),
+        }).then((r) => r.json()).then((d) => { if (d.matched) setVercelData(d.matched); }).catch(() => {})
+      );
+      calls.push(
+        fetch("/api/integrations/netlify", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ siteUrl: deployUrl, projectName: project.name }),
+        }).then((r) => r.json()).then((d) => { if (d.matched) setNetlifyData(d.matched); }).catch(() => {})
+      );
+    }
+
+    await Promise.all(calls);
+    setLoading(false);
+    setFetched(true);
+  };
+
+  if (!githubUrl && !deployUrl) return null;
+
+  const vercelState = (vercelData as { latest_deployment?: { state: string } } | null)?.latest_deployment?.state;
+  const netlifyState = (netlifyData as { latest_deploy?: { state: string } } | null)?.latest_deploy?.state;
+  const stateColor = (s?: string) =>
+    s === "READY" || s === "ready" ? "#34d399"
+    : s === "ERROR" || s === "error" ? "#f87171"
+    : "#fbbf24";
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="flex items-center justify-between mb-3">
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+          Live Status
+        </span>
+        <button className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }} onClick={fetchAll} disabled={loading}>
+          {loading ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={11} />}
+          {fetched ? "Refresh" : "Fetch Live Data"}
+        </button>
+      </div>
+
+      {!fetched && !loading && (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+          Click &ldquo;Fetch Live Data&rdquo; to pull real-time stats from GitHub{deployUrl ? " and your hosting platform" : ""}.
+        </p>
+      )}
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 12 }}>
+          <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Fetching live data...
+        </div>
+      )}
+
+      {fetched && !loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {githubData && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Github size={13} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>GitHub</span>
+                <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>{(githubData as { full_name?: string }).full_name}</span>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+                  {[
+                    { label: "issues", value: (githubData as { open_issues?: number }).open_issues ?? 0 },
+                    { label: "stars", value: (githubData as { stars?: number }).stars ?? 0 },
+                  ].map(({ label, value }) => (
+                    <span key={label} className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>{value}</span> {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {(githubData as { recent_commits?: { sha: string; message: string; author: string; date: string }[] }).recent_commits?.slice(0, 4).map((c) => (
+                <div key={c.sha} className="flex items-center gap-2" style={{ padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                  <GitCommit size={10} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                  <span className="font-mono" style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0 }}>{c.sha}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.message}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>{new Date(c.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {vercelData && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Zap size={13} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Vercel</span>
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{(vercelData as { name?: string }).name}</span>
+                {vercelState && <span style={{ marginLeft: "auto", fontSize: 10, color: stateColor(vercelState), fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}>{vercelState}</span>}
+              </div>
+              {(vercelData as { recent_deployments?: { state: string; url: string; created: number; message?: string }[] }).recent_deployments?.slice(0, 3).map((d, i) => (
+                <div key={i} className="flex items-center gap-2" style={{ padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: stateColor(d.state), flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.message ?? d.url}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>{new Date(d.created).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {netlifyData && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Globe size={13} style={{ color: "#00ad9f" }} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Netlify</span>
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{(netlifyData as { name?: string }).name}</span>
+                {netlifyState && <span style={{ marginLeft: "auto", fontSize: 10, color: stateColor(netlifyState), fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}>{netlifyState.toUpperCase()}</span>}
+              </div>
+              {(netlifyData as { recent_deploys?: { state: string; branch: string; title?: string; created_at: string; deploy_time?: number }[] }).recent_deploys?.slice(0, 3).map((d, i) => (
+                <div key={i} className="flex items-center gap-2" style={{ padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: stateColor(d.state), flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", flex: 1 }}>{d.title ?? d.branch}</span>
+                  {d.deploy_time && <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>{d.deploy_time}s</span>}
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>{new Date(d.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!githubData && !vercelData && !netlifyData && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+              <AlertCircle size={12} />
+              No live data found. Make sure your URLs are set in the Links fields above, and integrations are connected on the Integrations page.
+            </div>
+          )}
         </div>
       )}
     </div>
