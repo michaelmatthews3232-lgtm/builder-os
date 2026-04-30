@@ -17,6 +17,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -325,6 +326,7 @@ function IdeaCard({
   expanded: boolean;
   onToggleOutline: (id: string) => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const isGenerating = generatingMvp === idea.id;
 
   return (
@@ -459,12 +461,30 @@ function IdeaCard({
               <Archive size={12} />
             </button>
           )}
-          <button
-            onClick={() => onDelete(idea.id)}
-            style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: 3 }}
-          >
-            <Trash2 size={12} />
-          </button>
+          {confirmDelete ? (
+            <div className="flex items-center gap-1.5" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 6, padding: "3px 8px" }}>
+              <span style={{ fontSize: 10, color: "#f87171" }}>Delete?</span>
+              <button
+                onClick={() => onDelete(idea.id)}
+                style={{ fontSize: 10, fontWeight: 700, color: "#f87171", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 1, display: "flex" }}
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: 3 }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
         </div>
       </div>
     </div>
