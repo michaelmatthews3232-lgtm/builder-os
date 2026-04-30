@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type {
   LLCProfile, Expense, ExpenseCategory, BillingCycle,
-  Project, ProjectEntity,
+  Project, ProjectEntity, FinanceSnapshot,
 } from "@/lib/types";
 import {
   Building2, Edit3, Check, X, Plus, Trash2,
@@ -104,19 +104,24 @@ export default function FinancePage() {
   }>({ name: "", amount: "", category: "other", billing_cycle: "monthly", project_id: "", notes: "" });
 
   const [contractorTotalPaid, setContractorTotalPaid] = useState(0);
+  const [snapshots, setSnapshots] = useState<FinanceSnapshot[]>([]);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [showEinBank, setShowEinBank] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    const [{ data: llcData }, { data: expData }, { data: projData }, { data: payData }] = await Promise.all([
+    const [{ data: llcData }, { data: expData }, { data: projData }, { data: payData }, { data: snapData }] = await Promise.all([
       supabase.from("llc_profile").select("*").limit(1).single(),
       supabase.from("expenses").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name, status, revenue_monthly, entity").neq("status", "archived"),
       supabase.from("contractor_payments").select("amount"),
+      supabase.from("finance_snapshots").select("*").order("month", { ascending: false }),
     ]);
     setLlc(llcData as LLCProfile | null);
     setExpenses((expData as Expense[]) ?? []);
     setProjects((projData as Project[]) ?? []);
     const total = ((payData ?? []) as { amount: number }[]).reduce((s, p) => s + p.amount, 0);
     setContractorTotalPaid(total);
+    setSnapshots((snapData as FinanceSnapshot[]) ?? []);
     setLoading(false);
   }, []);
 
@@ -165,6 +170,31 @@ export default function FinancePage() {
     fetchAll();
   };
 
+  // ── Finance snapshot ──────────────────────────────────
+  const saveSnapshot = async () => {
+    const month = new Date().toISOString().slice(0, 7); // "2026-04"
+    setSavingSnapshot(true);
+    const existing = snapshots.find((s) => s.month === month);
+    const payload = {
+      month,
+      revenue: Math.round(monthlyRevenue * 100) / 100,
+      expenses: Math.round(monthlyExpenses * 100) / 100,
+      net: Math.round((monthlyRevenue - monthlyExpenses) * 100) / 100,
+    };
+    if (existing) {
+      await supabase.from("finance_snapshots").update(payload).eq("id", existing.id);
+    } else {
+      await supabase.from("finance_snapshots").insert(payload);
+    }
+    setSavingSnapshot(false);
+    fetchAll();
+  };
+
+  const deleteSnapshot = async (id: string) => {
+    await supabase.from("finance_snapshots").delete().eq("id", id);
+    setSnapshots((prev) => prev.filter((s) => s.id !== id));
+  };
+
   // ── LLC profile save ──────────────────────────────────
   const saveLlc = async () => {
     if (llc?.id) {
@@ -182,6 +212,8 @@ export default function FinancePage() {
       ein: llc?.ein ?? "",
       email: llc?.email ?? "",
       bank_name: llc?.bank_name ?? "",
+      bank_account_number: llc?.bank_account_number ?? "",
+      bank_routing_number: llc?.bank_routing_number ?? "",
       hosting_provider: llc?.hosting_provider ?? "",
       notes: llc?.notes ?? "",
     });
@@ -461,6 +493,8 @@ export default function FinancePage() {
               { key: "ein", label: "EIN", placeholder: "XX-XXXXXXX" },
               { key: "email", label: "LLC Email", placeholder: "business@yourdomain.com" },
               { key: "bank_name", label: "Bank", placeholder: "BlueVine, Chase, etc." },
+              { key: "bank_account_number", label: "BlueVine Account #", placeholder: "Account number" },
+              { key: "bank_routing_number", label: "BlueVine Routing #", placeholder: "Routing number" },
               { key: "hosting_provider", label: "Domain / Hosting", placeholder: "Hostinger, Namecheap, etc." },
             ].map(({ key, label, placeholder }) => (
               <div key={key}>
@@ -498,6 +532,20 @@ export default function FinancePage() {
               },
               { label: "LLC Email", value: llc.email },
               { label: "Bank", value: llc.bank_name },
+              {
+                label: "BlueVine Account #",
+                value: llc.bank_account_number,
+                sensitive: true,
+                revealed: showEinBank,
+                onToggle: () => setShowEinBank((v) => !v),
+              },
+              {
+                label: "BlueVine Routing #",
+                value: llc.bank_routing_number,
+                sensitive: true,
+                revealed: showEinBank,
+                onToggle: () => setShowEinBank((v) => !v),
+              },
               { label: "Domain / Hosting", value: llc.hosting_provider },
               { label: "Notes", value: llc.notes, fullWidth: true },
             ]
@@ -777,6 +825,54 @@ export default function FinancePage() {
                       );
                     })}
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Monthly Statements */}
+      <div className="card" style={{ padding: "20px 22px" }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={15} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Monthly Statements</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>— snapshot history</span>
+          </div>
+          <button
+            className="btn-primary"
+            onClick={saveSnapshot}
+            disabled={savingSnapshot}
+            style={{ fontSize: 12, padding: "6px 14px", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            {savingSnapshot ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Download size={11} />}
+            {savingSnapshot ? "Saving..." : `Save ${new Date().toLocaleString("default", { month: "short", year: "numeric" })}`}
+          </button>
+        </div>
+
+        {snapshots.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            No snapshots yet. Click Save to record this month&apos;s revenue and expenses.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 1fr 40px", gap: 8, padding: "6px 10px" }}>
+              {["Month", "Revenue", "Expenses", "Net", ""].map((h) => (
+                <span key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)" }}>{h}</span>
+              ))}
+            </div>
+            {snapshots.map((s) => {
+              const netColor = s.net >= 0 ? "#34d399" : "#f87171";
+              return (
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 1fr 40px", gap: 8, padding: "10px 10px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", alignItems: "center" }}>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{s.month}</span>
+                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>${s.revenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: "#f87171" }}>${s.expenses.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: netColor }}>{s.net >= 0 ? "+" : ""}${s.net.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <button onClick={() => deleteSnapshot(s.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               );
             })}

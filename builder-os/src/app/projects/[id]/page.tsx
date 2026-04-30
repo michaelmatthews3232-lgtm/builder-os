@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { KnowledgeTab } from "@/components/KnowledgeTab";
-import type { Project, Task, Contractor, ContractorUpdate, TaskStatus, ProjectStatus } from "@/lib/types";
+import type { Project, Task, Contractor, ContractorUpdate, TaskStatus, ProjectStatus, SalesLead, SalesLeadStatus } from "@/lib/types";
 import {
   ArrowLeft,
   Plus,
@@ -42,7 +42,7 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "contractors" | "vault" | "social">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "social" | "sales" | "marketing" | "contractors" | "vault">("tasks");
   const [showNewTask, setShowNewTask] = useState(false);
   const [editingLinks, setEditingLinks] = useState(false);
   const [linkForm, setLinkForm] = useState<Record<string, string>>({});
@@ -52,18 +52,24 @@ export default function ProjectDetailPage() {
   const [generatedTasks, setGeneratedTasks] = useState<{ title: string; description: string | null; priority: "high" | "medium" | "low" }[]>([]);
   const [selectedGenTasks, setSelectedGenTasks] = useState<Set<number>>(new Set());
   const [addingGenTasks, setAddingGenTasks] = useState(false);
+  const [oneTimeTotal, setOneTimeTotal] = useState(0);
+  const [generatingMarketing, setGeneratingMarketing] = useState(false);
+  const [marketingPlan, setMarketingPlan] = useState<Record<string, unknown> | null>(null);
 
   const fetchData = async () => {
-    const [{ data: proj }, { data: taskData }, { data: contractorData }] =
+    const [{ data: proj }, { data: taskData }, { data: contractorData }, { data: expData }] =
       await Promise.all([
         supabase.from("projects").select("*").eq("id", id).single(),
         supabase.from("tasks").select("*").eq("project_id", id).order("created_at", { ascending: false }),
         supabase.from("contractors").select("*").eq("project_id", id),
+        supabase.from("expenses").select("amount").eq("project_id", id).eq("billing_cycle", "one_time"),
       ]);
 
     setProject(proj as Project);
     setTasks((taskData as Task[]) ?? []);
     setContractors((contractorData as Contractor[]) ?? []);
+    const total = ((expData ?? []) as { amount: number }[]).reduce((s, e) => s + e.amount, 0);
+    setOneTimeTotal(total);
     setLoading(false);
   };
 
@@ -169,6 +175,21 @@ export default function ProjectDetailPage() {
     setSelectedGenTasks(new Set());
     setAddingGenTasks(false);
     fetchData();
+  };
+
+  const generateMarketingPlan = async () => {
+    if (!project) return;
+    setGeneratingMarketing(true);
+    try {
+      const res = await fetch("/api/generate-marketing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName: project.name, description: project.description, status: project.status }),
+      });
+      const { plan } = await res.json();
+      if (plan) setMarketingPlan(plan);
+    } catch { /* silently fail */ }
+    setGeneratingMarketing(false);
   };
 
   if (loading) {
@@ -280,15 +301,16 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Stats Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {[
-          { label: "To Do", count: todoTasks.length, color: "#6b7280" },
-          { label: "In Progress", count: inProgressTasks.length, color: "#fbbf24" },
-          { label: "Done", count: doneTasks.length, color: "#34d399" },
-        ].map(({ label, count, color }) => (
+          { label: "To Do", value: todoTasks.length.toString(), color: "#6b7280" },
+          { label: "In Progress", value: inProgressTasks.length.toString(), color: "#fbbf24" },
+          { label: "Done", value: doneTasks.length.toString(), color: "#34d399" },
+          { label: "Invested", value: oneTimeTotal > 0 ? `$${oneTimeTotal.toLocaleString()}` : "—", color: oneTimeTotal > 0 ? "#f87171" : "var(--text-muted)" },
+        ].map(({ label, value, color }) => (
           <div key={label} className="card" style={{ padding: "14px 18px", textAlign: "center" }}>
-            <div className="font-mono" style={{ fontSize: 24, fontWeight: 700, color, marginBottom: 4 }}>
-              {count}
+            <div className="font-mono" style={{ fontSize: 22, fontWeight: 700, color, marginBottom: 4 }}>
+              {value}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               {label}
@@ -300,7 +322,7 @@ export default function ProjectDetailPage() {
       {/* Tabs */}
       <div>
         <div className="flex items-center gap-0" style={{ borderBottom: "1px solid var(--border)", marginBottom: 20 }}>
-          {(["tasks", "links", "social", "contractors", "vault"] as const).map((tab) => (
+          {(["tasks", "links", "social", "sales", "marketing", "contractors", "vault"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -534,6 +556,22 @@ export default function ProjectDetailPage() {
             </div>
 
           </div>
+        )}
+
+        {/* Sales Tab */}
+        {activeTab === "sales" && (
+          <SalesTab projectId={id} />
+        )}
+
+        {/* Marketing Tab */}
+        {activeTab === "marketing" && (
+          <MarketingTab
+            project={project}
+            plan={marketingPlan}
+            generating={generatingMarketing}
+            onGenerate={generateMarketingPlan}
+            onClear={() => setMarketingPlan(null)}
+          />
         )}
 
         {/* Contractors Tab */}
@@ -1127,6 +1165,377 @@ function ContractorsTab({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sales Tab ─────────────────────────────────────────────────────────────────
+
+const SALES_STATUSES: SalesLeadStatus[] = ["lead", "contacted", "responded", "converted", "lost"];
+
+const SALES_STATUS_CONFIG: Record<SalesLeadStatus, { color: string; bg: string }> = {
+  lead:      { color: "#6b7280", bg: "rgba(107,114,128,0.1)" },
+  contacted: { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
+  responded: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
+  converted: { color: "#34d399", bg: "rgba(52,211,153,0.1)" },
+  lost:      { color: "#f87171", bg: "rgba(248,113,113,0.1)" },
+};
+
+function SalesTab({ projectId }: { projectId: string }) {
+  const [leads, setLeads] = useState<SalesLead[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [milestoneGoal, setMilestoneGoal] = useState("");
+  const [editingMilestone, setEditingMilestone] = useState(false);
+  const [form, setForm] = useState({ contact_name: "", contact_info: "", source: "", notes: "", status: "lead" as SalesLeadStatus });
+  const [saving, setSaving] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<SalesLeadStatus | "all">("all");
+
+  const fetchLeads = async () => {
+    const { data } = await supabase.from("project_sales").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+    setLeads((data as SalesLead[]) ?? []);
+    const goal = (data as SalesLead[] | null)?.[0]?.milestone_goal ?? "";
+    if (goal && !milestoneGoal) setMilestoneGoal(goal);
+  };
+
+  useEffect(() => { fetchLeads(); }, [projectId]);
+
+  const addLead = async () => {
+    setSaving(true);
+    await supabase.from("project_sales").insert({
+      project_id: projectId,
+      contact_name: form.contact_name.trim() || null,
+      contact_info: form.contact_info.trim() || null,
+      source: form.source.trim() || null,
+      notes: form.notes.trim() || null,
+      status: form.status,
+      milestone_goal: milestoneGoal.trim() || null,
+    });
+    setForm({ contact_name: "", contact_info: "", source: "", notes: "", status: "lead" });
+    setAdding(false);
+    setSaving(false);
+    fetchLeads();
+  };
+
+  const updateStatus = async (id: string, status: SalesLeadStatus) => {
+    await supabase.from("project_sales").update({ status }).eq("id", id);
+    setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status } : l));
+  };
+
+  const deleteLead = async (id: string) => {
+    await supabase.from("project_sales").delete().eq("id", id);
+    fetchLeads();
+  };
+
+  const saveMilestone = async () => {
+    await supabase.from("project_sales").update({ milestone_goal: milestoneGoal.trim() || null }).eq("project_id", projectId);
+    setEditingMilestone(false);
+    fetchLeads();
+  };
+
+  const filtered = filterStatus === "all" ? leads : leads.filter((l) => l.status === filterStatus);
+  const converted = leads.filter((l) => l.status === "converted").length;
+
+  return (
+    <div>
+      {/* Milestone goal */}
+      <div className="card" style={{ padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+        <DollarSign size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 3 }}>Milestone Goal</div>
+          {editingMilestone ? (
+            <div className="flex items-center gap-2">
+              <input
+                className="input-base"
+                style={{ flex: 1, fontSize: 13, padding: "5px 8px" }}
+                placeholder="e.g. 100 users, $1,000 MRR, 10 paying customers"
+                value={milestoneGoal}
+                onChange={(e) => setMilestoneGoal(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") saveMilestone(); if (e.key === "Escape") setEditingMilestone(false); }}
+              />
+              <button className="btn-primary" style={{ fontSize: 11, padding: "5px 10px" }} onClick={saveMilestone}>Save</button>
+              <button className="btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={() => setEditingMilestone(false)}>Cancel</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2" onClick={() => setEditingMilestone(true)} style={{ cursor: "pointer" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: milestoneGoal ? "var(--accent)" : "var(--text-muted)" }}>
+                {milestoneGoal || "Set a milestone goal..."}
+              </span>
+              <Edit3 size={11} style={{ color: "var(--text-muted)" }} />
+            </div>
+          )}
+        </div>
+        <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+          {converted}/{leads.length} converted
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          {(["all", ...SALES_STATUSES] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s as typeof filterStatus)}
+              style={{
+                padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid",
+                borderColor: filterStatus === s ? "var(--border-accent)" : "var(--border)",
+                background: filterStatus === s ? "var(--accent-dim)" : "transparent",
+                color: filterStatus === s ? "var(--accent)" : "var(--text-muted)",
+              }}
+            >
+              {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
+        <button className="btn-primary" onClick={() => setAdding(true)}>
+          <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
+          Add Lead
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label>Contact Name</label>
+              <input className="input-base mt-1" placeholder="John Smith" value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} autoFocus />
+            </div>
+            <div>
+              <label>Contact Info (email / LinkedIn / phone)</label>
+              <input className="input-base mt-1" placeholder="john@company.com" value={form.contact_info} onChange={(e) => setForm({ ...form, contact_info: e.target.value })} />
+            </div>
+            <div>
+              <label>Status</label>
+              <select className="input-base mt-1" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as SalesLeadStatus })}>
+                {SALES_STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Source (how they found you)</label>
+              <input className="input-base mt-1" placeholder="Twitter, referral, cold outreach..." value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+            </div>
+            <div style={{ gridColumn: "2 / -1" }}>
+              <label>Notes</label>
+              <input className="input-base mt-1" placeholder="Any context about this lead..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setAdding(false)}>Cancel</button>
+            <button className="btn-primary" onClick={addLead} disabled={saving}>
+              {saving ? "Saving..." : "Add Lead"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
+          <DollarSign size={24} style={{ margin: "0 auto 10px" }} />
+          <p style={{ fontSize: 13, marginBottom: 12 }}>No {filterStatus !== "all" ? filterStatus : ""} leads yet.</p>
+          <button className="btn-primary" onClick={() => setAdding(true)}>Add First Lead</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {filtered.map((lead) => {
+            const sc = SALES_STATUS_CONFIG[lead.status];
+            return (
+              <div key={lead.id} className="card" style={{ padding: "13px 16px" }}>
+                <div className="flex items-center gap-4">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex items-center gap-2.5 mb-0.5">
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                        {lead.contact_name || "Unnamed Lead"}
+                      </span>
+                      {lead.source && (
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4 }}>
+                          {lead.source}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      {lead.contact_info && (
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{lead.contact_info}</span>
+                      )}
+                      {lead.notes && (
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>{lead.notes}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={lead.status}
+                      onChange={(e) => updateStatus(lead.id, e.target.value as SalesLeadStatus)}
+                      style={{
+                        fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
+                        padding: "3px 8px", borderRadius: 99, fontFamily: "JetBrains Mono, monospace",
+                        border: `1px solid ${sc.color}40`, background: sc.bg, color: sc.color, cursor: "pointer",
+                      }}
+                    >
+                      {SALES_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <button onClick={() => deleteLead(lead.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Marketing Tab ─────────────────────────────────────────────────────────────
+
+function MarketingTab({
+  project,
+  plan,
+  generating,
+  onGenerate,
+  onClear,
+}: {
+  project: Project;
+  plan: Record<string, unknown> | null;
+  generating: boolean;
+  onGenerate: () => void;
+  onClear: () => void;
+}) {
+  if (!plan) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 24px", gap: 16 }}>
+        <Sparkles size={32} style={{ color: "var(--accent)", opacity: 0.6 }} />
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Generate a Marketing Plan</p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", maxWidth: 400 }}>
+            Claude will create a tailored marketing plan for <strong style={{ color: "var(--text-secondary)" }}>{project.name}</strong> — channels, 30-day plan, content ideas, and KPIs.
+          </p>
+        </div>
+        <button
+          className="btn-primary"
+          onClick={onGenerate}
+          disabled={generating}
+          style={{ fontSize: 13, padding: "10px 24px", display: "flex", alignItems: "center", gap: 8 }}
+        >
+          {generating
+            ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Generating...</>
+            : <><Sparkles size={14} /> Generate Plan</>}
+        </button>
+      </div>
+    );
+  }
+
+  type PlanChannel = { name: string; priority: string; rationale: string };
+  type PlanWeek = { week: number; focus: string; actions: string[] };
+  const channels = (plan.channels as PlanChannel[]) ?? [];
+  const thirtyDay = (plan.thirty_day_plan as PlanWeek[]) ?? [];
+  const contentIdeas = (plan.content_ideas as string[]) ?? [];
+  const growthTactics = (plan.growth_tactics as string[]) ?? [];
+  const kpis = (plan.kpis as string[]) ?? [];
+  const priorityColor = (p: string) => p === "high" ? "#f87171" : p === "medium" ? "#fbbf24" : "#6b7280";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} style={{ color: "var(--accent)" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Marketing Plan — {project.name}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn-ghost" style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }} onClick={onGenerate} disabled={generating}>
+            {generating ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Sparkles size={11} />}
+            Regenerate
+          </button>
+          <button className="btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={onClear}>Clear</button>
+        </div>
+      </div>
+
+      {/* Positioning + Audience */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {[
+          { label: "Positioning", value: plan.positioning as string },
+          { label: "Target Audience", value: plan.target_audience as string },
+        ].map(({ label, value }) => (
+          <div key={label} className="card" style={{ padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 6 }}>{label}</div>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, margin: 0 }}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Channels */}
+      {channels.length > 0 && (
+        <div className="card" style={{ padding: "16px 18px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 10 }}>Channels</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {channels.map((ch, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: priorityColor(ch.priority), textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace", flexShrink: 0, marginTop: 1 }}>
+                  {ch.priority}
+                </span>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{ch.name}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 8 }}>{ch.rationale}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 30-day plan */}
+      {thirtyDay.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 8 }}>30-Day Plan</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+            {thirtyDay.map((w) => (
+              <div key={w.week} className="card" style={{ padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginBottom: 4 }}>Week {w.week} — {w.focus}</div>
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {(w.actions ?? []).map((a, i) => (
+                    <li key={i} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55 }}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Content ideas + Growth tactics */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {contentIdeas.length > 0 && (
+          <div className="card" style={{ padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 8 }}>Content Ideas</div>
+            {contentIdeas.map((idea, i) => (
+              <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55, paddingBottom: 4 }}>• {idea}</div>
+            ))}
+          </div>
+        )}
+        {growthTactics.length > 0 && (
+          <div className="card" style={{ padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 8 }}>Growth Tactics</div>
+            {growthTactics.map((t, i) => (
+              <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55, paddingBottom: 4 }}>• {t}</div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* KPIs */}
+      {kpis.length > 0 && (
+        <div className="card" style={{ padding: "14px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 8 }}>KPIs to Track</div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {kpis.map((kpi, i) => (
+              <span key={i} style={{ fontSize: 12, color: "var(--accent)", background: "var(--accent-dim)", border: "1px solid var(--border-accent)", padding: "4px 10px", borderRadius: 6 }}>
+                {kpi}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>

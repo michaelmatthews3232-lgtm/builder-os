@@ -161,10 +161,36 @@ export interface LLCProfile {
   ein: string | null;
   email: string | null;
   bank_name: string | null;
+  bank_account_number: string | null;
+  bank_routing_number: string | null;
   hosting_provider: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type SalesLeadStatus = "lead" | "contacted" | "responded" | "converted" | "lost";
+
+export interface SalesLead {
+  id: string;
+  project_id: string;
+  contact_name: string | null;
+  contact_info: string | null;
+  status: SalesLeadStatus;
+  notes: string | null;
+  milestone_goal: string | null;
+  source: string | null;
+  created_at: string;
+}
+
+export interface FinanceSnapshot {
+  id: string;
+  month: string;
+  revenue: number;
+  expenses: number;
+  net: number;
+  notes: string | null;
+  created_at: string;
 }
 
 export type ExpenseCategory = "hosting" | "ai_tools" | "subscriptions" | "domain" | "contractor" | "other";
