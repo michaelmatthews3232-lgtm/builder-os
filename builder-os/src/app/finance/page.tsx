@@ -94,6 +94,8 @@ export default function FinancePage() {
   } | null>(null);
   const [stripeFetching, setStripeFetching] = useState(false);
   const [stripeError, setStripeError] = useState<string | null>(null);
+  const [stripeMappings, setStripeMappings] = useState<Record<string, string>>({});
+  const [applyingMappings, setApplyingMappings] = useState(false);
 
   const [addingExpense, setAddingExpense] = useState(false);
   const [expForm, setExpForm] = useState<{
@@ -132,11 +134,35 @@ export default function FinancePage() {
       } else {
         const data = await res.json();
         setStripeData(data);
+        // Auto-suggest mappings: match product name to project name (fuzzy)
+        const autoMap: Record<string, string> = {};
+        for (const product of data.products ?? []) {
+          const match = projects.find((p) =>
+            p.name.toLowerCase().includes(product.name.toLowerCase()) ||
+            product.name.toLowerCase().includes(p.name.toLowerCase())
+          );
+          if (match) autoMap[product.id] = match.id;
+        }
+        setStripeMappings(autoMap);
       }
     } catch {
       setStripeError("Network error");
     }
     setStripeFetching(false);
+  };
+
+  const applyStripeMappings = async () => {
+    if (!stripeData) return;
+    setApplyingMappings(true);
+    const updates = Object.entries(stripeMappings).filter(([, projId]) => projId);
+    for (const [productId, projectId] of updates) {
+      const product = stripeData.products.find((p) => p.id === productId);
+      if (product && projectId) {
+        await supabase.from("projects").update({ revenue_monthly: Math.round(product.mrr * 100) / 100 }).eq("id", projectId);
+      }
+    }
+    setApplyingMappings(false);
+    fetchAll();
   };
 
   // ── LLC profile save ──────────────────────────────────
@@ -334,16 +360,42 @@ export default function FinancePage() {
 
             {stripeData.products.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 2 }}>By Product</div>
+                <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)" }}>By Product — map to project</div>
+                  <button
+                    className="btn-primary"
+                    style={{ fontSize: 11, padding: "4px 12px" }}
+                    onClick={applyStripeMappings}
+                    disabled={applyingMappings || Object.values(stripeMappings).every((v) => !v)}
+                  >
+                    {applyingMappings ? "Applying..." : "Apply to Projects"}
+                  </button>
+                </div>
                 {stripeData.products.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between" style={{ fontSize: 12, padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid var(--border)" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>{p.name}</span>
-                    <div className="flex items-center gap-4">
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.subscriptions} sub{p.subscriptions !== 1 ? "s" : ""}</span>
-                      <span className="font-mono" style={{ color: "#635bff", fontWeight: 600 }}>${p.mrr.toFixed(2)}/mo</span>
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{p.name}</div>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.subscriptions} sub{p.subscriptions !== 1 ? "s" : ""}</span>
+                        <span className="font-mono" style={{ fontSize: 12, color: "#635bff", fontWeight: 700 }}>${p.mrr.toFixed(2)}/mo</span>
+                      </div>
                     </div>
+                    <select
+                      className="input-base"
+                      style={{ fontSize: 11, padding: "4px 8px", width: "auto", minWidth: 160 }}
+                      value={stripeMappings[p.id] ?? ""}
+                      onChange={(e) => setStripeMappings((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                    >
+                      <option value="">— no project —</option>
+                      {projects.map((proj) => (
+                        <option key={proj.id} value={proj.id}>{proj.name}</option>
+                      ))}
+                    </select>
                   </div>
                 ))}
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                  Select a project for each product and click &quot;Apply to Projects&quot; to update revenue_monthly.
+                </p>
               </div>
             )}
 

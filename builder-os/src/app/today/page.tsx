@@ -5,16 +5,16 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewTaskModal } from "@/components/NewTaskModal";
-import type { Project, Task, TaskStatus, PROJECT_STATUS_WEIGHT, PRIORITY_WEIGHT } from "@/lib/types";
-import { format, isPast, isToday, parseISO, differenceInDays } from "date-fns";
+import type { Project, Task, TaskStatus, PlanItem, PlanItemStatus } from "@/lib/types";
+import { format, isPast, isToday, parseISO, differenceInDays, startOfWeek } from "date-fns";
 import {
   Zap,
   Clock,
   CheckSquare,
-  Circle,
   AlertTriangle,
   Plus,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 
 // Sort weights
@@ -23,23 +23,32 @@ const STATUS_W: Record<string, number> = {
 };
 const PRIORITY_W: Record<string, number> = { high: 1, medium: 2, low: 3 };
 
+function getWeekStart(): string {
+  const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
+  return format(monday, "yyyy-MM-dd");
+}
+
 export default function TodayPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [completing, setCompleting] = useState<Set<string>>(new Set());
 
   const fetchData = async () => {
-    const [{ data: tasksData }, { data: projectsData }] = await Promise.all([
+    const weekStart = getWeekStart();
+    const [{ data: tasksData }, { data: projectsData }, { data: planData }] = await Promise.all([
       supabase
         .from("tasks")
         .select("*, project:projects(id, name, status)")
         .neq("status", "done"),
       supabase.from("projects").select("*"),
+      supabase.from("plan_items").select("*").eq("week_start", weekStart).eq("status", "todo").order("priority"),
     ]);
     setTasks((tasksData as Task[]) ?? []);
     setProjects((projectsData as Project[]) ?? []);
+    setPlanItems((planData as PlanItem[]) ?? []);
     setLoading(false);
   };
 
@@ -94,6 +103,11 @@ export default function TodayPage() {
     });
   };
 
+  const markPlanItemDone = async (planId: string) => {
+    await supabase.from("plan_items").update({ status: "done" }).eq("id", planId);
+    setPlanItems((prev) => prev.filter((p) => p.id !== planId));
+  };
+
   return (
     <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       {/* Header */}
@@ -141,6 +155,64 @@ export default function TodayPage() {
                 transition: "width 0.4s ease",
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Game Plan items for this week */}
+      {!loading && planItems.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={13} style={{ color: "var(--accent)" }} />
+            <h2 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              This Week&apos;s Game Plan
+            </h2>
+            <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>{planItems.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {planItems.map((item) => (
+              <div
+                key={item.id}
+                className="card"
+                style={{ padding: "12px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}
+              >
+                <button
+                  onClick={() => markPlanItemDone(item.id)}
+                  style={{
+                    width: 18, height: 18, borderRadius: 5, border: "2px solid var(--border)",
+                    background: "transparent", flexShrink: 0, marginTop: 1,
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "all 0.12s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "#34d399";
+                    (e.currentTarget as HTMLElement).style.background = "rgba(52,211,153,0.1)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                    (e.currentTarget as HTMLElement).style.background = "transparent";
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)" }}>{item.title}</span>
+                    {item.project_name && (
+                      <span style={{ fontSize: 10, color: "var(--accent)", background: "var(--accent-dim)", padding: "1px 7px", borderRadius: 4, fontWeight: 600 }}>
+                        {item.project_name}
+                      </span>
+                    )}
+                    <span className="font-mono" style={{ fontSize: 10, color: item.priority <= 3 ? "#f87171" : item.priority <= 6 ? "#fbbf24" : "var(--text-muted)", fontWeight: 700 }}>
+                      P{item.priority}
+                    </span>
+                  </div>
+                  {item.description && (
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "3px 0 0" }}>
+                      {item.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

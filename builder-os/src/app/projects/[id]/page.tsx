@@ -29,6 +29,7 @@ import {
   Loader2,
   GitCommit,
   AlertCircle,
+  Sparkles,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -45,6 +46,10 @@ export default function ProjectDetailPage() {
   const [linkForm, setLinkForm] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [generatingTasks, setGeneratingTasks] = useState(false);
+  const [generatedTasks, setGeneratedTasks] = useState<{ title: string; description: string | null; priority: "high" | "medium" | "low" }[]>([]);
+  const [selectedGenTasks, setSelectedGenTasks] = useState<Set<number>>(new Set());
+  const [addingGenTasks, setAddingGenTasks] = useState(false);
 
   const fetchData = async () => {
     const [{ data: proj }, { data: taskData }, { data: contractorData }] =
@@ -117,6 +122,51 @@ export default function ProjectDetailPage() {
     ]);
     await supabase.from("projects").delete().eq("id", id);
     router.push("/projects");
+  };
+
+  const generateTasksForProject = async () => {
+    if (!project) return;
+    setGeneratingTasks(true);
+    try {
+      const res = await fetch("/api/generate-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectName: project.name,
+          description: project.description,
+          status: project.status,
+          existingTasks: tasks.map((t) => t.title),
+        }),
+      });
+      const { tasks: newTasks } = await res.json();
+      if (newTasks?.length) {
+        setGeneratedTasks(newTasks);
+        setSelectedGenTasks(new Set(newTasks.map((_: unknown, i: number) => i)));
+      }
+    } catch { /* silently fail */ }
+    setGeneratingTasks(false);
+  };
+
+  const addGeneratedTasks = async () => {
+    if (!generatedTasks.length) return;
+    setAddingGenTasks(true);
+    const toInsert = generatedTasks
+      .filter((_, i) => selectedGenTasks.has(i))
+      .map((t) => ({
+        project_id: id,
+        title: t.title,
+        description: t.description ?? null,
+        priority: t.priority,
+        status: "todo",
+        assigned_to: "self",
+      }));
+    if (toInsert.length) {
+      await supabase.from("tasks").insert(toInsert);
+    }
+    setGeneratedTasks([]);
+    setSelectedGenTasks(new Set());
+    setAddingGenTasks(false);
+    fetchData();
   };
 
   if (loading) {
@@ -283,15 +333,108 @@ export default function ProjectDetailPage() {
         {/* Tasks Tab */}
         {activeTab === "tasks" && (
           <div>
-            <div className="flex justify-end mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                className="btn-ghost"
+                onClick={generatedTasks.length ? () => { setGeneratedTasks([]); setSelectedGenTasks(new Set()); } : generateTasksForProject}
+                disabled={generatingTasks}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                {generatingTasks
+                  ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                  : <Sparkles size={12} />}
+                {generatingTasks ? "Generating..." : generatedTasks.length ? "Clear AI Tasks" : "Generate with AI"}
+              </button>
               <button className="btn-primary" onClick={() => setShowNewTask(true)}>
                 <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
                 Add Task
               </button>
             </div>
-            {tasks.length === 0 ? (
+
+            {/* AI-generated task picker */}
+            {generatedTasks.length > 0 && (
+              <div className="card" style={{ padding: 18, marginBottom: 16, borderColor: "rgba(99,102,241,0.25)", background: "rgba(99,102,241,0.04)" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={13} style={{ color: "var(--accent)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>AI-Suggested Tasks</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{selectedGenTasks.size} selected</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => {
+                        if (selectedGenTasks.size === generatedTasks.length) {
+                          setSelectedGenTasks(new Set());
+                        } else {
+                          setSelectedGenTasks(new Set(generatedTasks.map((_, i) => i)));
+                        }
+                      }}
+                    >
+                      {selectedGenTasks.size === generatedTasks.length ? "Deselect All" : "Select All"}
+                    </button>
+                    <button
+                      className="btn-primary"
+                      style={{ fontSize: 11, padding: "5px 12px" }}
+                      onClick={addGeneratedTasks}
+                      disabled={addingGenTasks || selectedGenTasks.size === 0}
+                    >
+                      {addingGenTasks ? "Adding..." : `Add ${selectedGenTasks.size} Task${selectedGenTasks.size !== 1 ? "s" : ""}`}
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {generatedTasks.map((t, i) => {
+                    const selected = selectedGenTasks.has(i);
+                    const priorityColor = t.priority === "high" ? "#f87171" : t.priority === "medium" ? "#fbbf24" : "#6b7280";
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => setSelectedGenTasks((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          return next;
+                        })}
+                        style={{
+                          display: "flex", alignItems: "flex-start", gap: 10,
+                          padding: "10px 12px", borderRadius: 7, cursor: "pointer",
+                          background: selected ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.02)",
+                          border: `1px solid ${selected ? "rgba(99,102,241,0.3)" : "var(--border)"}`,
+                          transition: "all 0.1s",
+                        }}
+                      >
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4, flexShrink: 0, marginTop: 1,
+                          border: `2px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+                          background: selected ? "var(--accent)" : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {selected && <Check size={10} color="#fff" strokeWidth={3} />}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{t.title}</span>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: priorityColor, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "JetBrains Mono, monospace" }}>
+                              {t.priority}
+                            </span>
+                          </div>
+                          {t.description && (
+                            <p style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.4, margin: "3px 0 0" }}>
+                              {t.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {tasks.length === 0 && generatedTasks.length === 0 ? (
               <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
-                No tasks yet.
+                No tasks yet. Add one or let AI generate some.
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

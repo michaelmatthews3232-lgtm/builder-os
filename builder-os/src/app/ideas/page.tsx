@@ -13,8 +13,23 @@ import {
   Archive,
   Trash2,
   ArrowUpRight,
+  Sparkles,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format } from "date-fns";
+
+interface MvpOutline {
+  problem: string;
+  target_user: string;
+  mvp_features: string[];
+  cut_features: string[];
+  risks: string[];
+  revenue_model: string;
+  first_steps: string[];
+  validation_signal: string;
+}
 
 export default function IdeasPage() {
   const router = useRouter();
@@ -23,6 +38,9 @@ export default function IdeasPage() {
   const [showModal, setShowModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<IdeaStatus | "all">("all");
   const [converting, setConverting] = useState<string | null>(null);
+  const [generatingMvp, setGeneratingMvp] = useState<string | null>(null);
+  const [mvpOutlines, setMvpOutlines] = useState<Record<string, MvpOutline>>({});
+  const [expandedOutlines, setExpandedOutlines] = useState<Set<string>>(new Set());
 
   const fetchIdeas = async () => {
     const { data } = await supabase
@@ -76,6 +94,33 @@ export default function IdeasPage() {
       router.push(`/projects/${data.id}`);
     }
     setConverting(null);
+  };
+
+  const generateMvp = async (idea: Idea) => {
+    setGeneratingMvp(idea.id);
+    try {
+      const res = await fetch("/api/generate-mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: idea.title, description: idea.description }),
+      });
+      const { outline, error } = await res.json();
+      if (error || !outline) throw new Error(error ?? "No outline");
+      setMvpOutlines((prev) => ({ ...prev, [idea.id]: outline }));
+      setExpandedOutlines((prev) => new Set([...prev, idea.id]));
+    } catch {
+      // silently fail
+    }
+    setGeneratingMvp(null);
+  };
+
+  const toggleOutline = (id: string) => {
+    setExpandedOutlines((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const filtered =
@@ -144,7 +189,6 @@ export default function IdeasPage() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-          {/* Validated */}
           {(filterStatus === "all" || filterStatus === "validated") && grouped.validated.length > 0 && (
             <IdeaGroup
               title="Validated"
@@ -156,10 +200,14 @@ export default function IdeasPage() {
               onValidate={validateIdea}
               onConvert={convertToProject}
               converting={converting}
+              onGenerateMvp={generateMvp}
+              generatingMvp={generatingMvp}
+              mvpOutlines={mvpOutlines}
+              expandedOutlines={expandedOutlines}
+              onToggleOutline={toggleOutline}
             />
           )}
 
-          {/* Ideas */}
           {(filterStatus === "all" || filterStatus === "idea") && grouped.idea.length > 0 && (
             <IdeaGroup
               title="Ideas"
@@ -171,10 +219,14 @@ export default function IdeasPage() {
               onValidate={validateIdea}
               onConvert={convertToProject}
               converting={converting}
+              onGenerateMvp={generateMvp}
+              generatingMvp={generatingMvp}
+              mvpOutlines={mvpOutlines}
+              expandedOutlines={expandedOutlines}
+              onToggleOutline={toggleOutline}
             />
           )}
 
-          {/* Archived */}
           {(filterStatus === "all" || filterStatus === "archived") && grouped.archived.length > 0 && (
             <IdeaGroup
               title="Archived"
@@ -186,6 +238,11 @@ export default function IdeasPage() {
               onValidate={validateIdea}
               onConvert={convertToProject}
               converting={converting}
+              onGenerateMvp={generateMvp}
+              generatingMvp={generatingMvp}
+              mvpOutlines={mvpOutlines}
+              expandedOutlines={expandedOutlines}
+              onToggleOutline={toggleOutline}
             />
           )}
         </div>
@@ -199,15 +256,9 @@ export default function IdeasPage() {
 }
 
 function IdeaGroup({
-  title,
-  icon,
-  ideas,
-  color,
-  onDelete,
-  onArchive,
-  onValidate,
-  onConvert,
-  converting,
+  title, icon, ideas, color,
+  onDelete, onArchive, onValidate, onConvert, converting,
+  onGenerateMvp, generatingMvp, mvpOutlines, expandedOutlines, onToggleOutline,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -218,6 +269,11 @@ function IdeaGroup({
   onValidate: (id: string) => void;
   onConvert: (idea: Idea) => void;
   converting: string | null;
+  onGenerateMvp: (idea: Idea) => void;
+  generatingMvp: string | null;
+  mvpOutlines: Record<string, MvpOutline>;
+  expandedOutlines: Set<string>;
+  onToggleOutline: (id: string) => void;
 }) {
   return (
     <section>
@@ -231,100 +287,215 @@ function IdeaGroup({
         </span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {ideas.map((idea) => (
-          <div
+          <IdeaCard
             key={idea.id}
-            className="card card-hover"
-            style={{ padding: 18, display: "flex", flexDirection: "column", gap: 0 }}
-          >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3 }}>
-                {idea.title}
-              </h3>
-              <StatusBadge type="idea" value={idea.status} />
-            </div>
-
-            {idea.description && (
-              <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14, flex: 1 }}>
-                {idea.description}
-              </p>
-            )}
-
-            <div
-              style={{
-                borderTop: "1px solid var(--border)",
-                paddingTop: 12,
-                marginTop: "auto",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>
-                {format(new Date(idea.created_at), "MMM d, yyyy")}
-              </span>
-              <div className="flex items-center gap-1.5">
-                {idea.status === "idea" && (
-                  <button
-                    onClick={() => onValidate(idea.id)}
-                    style={{
-                      fontSize: 10,
-                      padding: "3px 9px",
-                      borderRadius: 5,
-                      background: "rgba(52,211,153,0.08)",
-                      color: "#34d399",
-                      border: "1px solid rgba(52,211,153,0.2)",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      fontFamily: "'Sora', sans-serif",
-                    }}
-                  >
-                    Validate
-                  </button>
-                )}
-                {idea.status !== "archived" && (
-                  <button
-                    onClick={() => onConvert(idea)}
-                    disabled={converting === idea.id}
-                    style={{
-                      fontSize: 10,
-                      padding: "3px 9px",
-                      borderRadius: 5,
-                      background: converting === idea.id ? "rgba(0,212,160,0.05)" : "var(--accent-dim)",
-                      color: "var(--accent)",
-                      border: "1px solid var(--border-accent)",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      fontFamily: "'Sora', sans-serif",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <ArrowUpRight size={10} />
-                    {converting === idea.id ? "..." : "→ Project"}
-                  </button>
-                )}
-                {idea.status !== "archived" && (
-                  <button
-                    onClick={() => onArchive(idea.id)}
-                    style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.6, padding: 3 }}
-                  >
-                    <Archive size={12} />
-                  </button>
-                )}
-                <button
-                  onClick={() => onDelete(idea.id)}
-                  style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: 3 }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            </div>
-          </div>
+            idea={idea}
+            onDelete={onDelete}
+            onArchive={onArchive}
+            onValidate={onValidate}
+            onConvert={onConvert}
+            converting={converting}
+            onGenerateMvp={onGenerateMvp}
+            generatingMvp={generatingMvp}
+            outline={mvpOutlines[idea.id]}
+            expanded={expandedOutlines.has(idea.id)}
+            onToggleOutline={onToggleOutline}
+          />
         ))}
       </div>
     </section>
+  );
+}
+
+function IdeaCard({
+  idea, onDelete, onArchive, onValidate, onConvert, converting,
+  onGenerateMvp, generatingMvp, outline, expanded, onToggleOutline,
+}: {
+  idea: Idea;
+  onDelete: (id: string) => void;
+  onArchive: (id: string) => void;
+  onValidate: (id: string) => void;
+  onConvert: (idea: Idea) => void;
+  converting: string | null;
+  onGenerateMvp: (idea: Idea) => void;
+  generatingMvp: string | null;
+  outline?: MvpOutline;
+  expanded: boolean;
+  onToggleOutline: (id: string) => void;
+}) {
+  const isGenerating = generatingMvp === idea.id;
+
+  return (
+    <div className="card" style={{ padding: 18 }}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3 }}>
+          {idea.title}
+        </h3>
+        <StatusBadge type="idea" value={idea.status} />
+      </div>
+
+      {idea.description && (
+        <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+          {idea.description}
+        </p>
+      )}
+
+      {/* MVP Outline Panel */}
+      {outline && expanded && (
+        <div style={{ marginBottom: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <OutlineField label="Problem" value={outline.problem} />
+            <OutlineField label="Target User" value={outline.target_user} />
+            <OutlineField label="Revenue Model" value={outline.revenue_model} />
+            <OutlineField label="Validation Signal" value={outline.validation_signal} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 }}>
+            <OutlineListField label="MVP Features" items={outline.mvp_features} color="#34d399" />
+            <OutlineListField label="Cut for Now" items={outline.cut_features} color="#f87171" />
+            <OutlineListField label="First Steps" items={outline.first_steps} color="var(--accent)" />
+          </div>
+          {outline.risks?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <OutlineListField label="Key Risks" items={outline.risks} color="#fbbf24" />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        style={{
+          borderTop: outline && expanded ? "none" : "1px solid var(--border)",
+          paddingTop: 12,
+          marginTop: "auto",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>
+          {format(new Date(idea.created_at), "MMM d, yyyy")}
+        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* MVP Outline button */}
+          {idea.status !== "archived" && (
+            <button
+              onClick={() => outline ? onToggleOutline(idea.id) : onGenerateMvp(idea)}
+              disabled={isGenerating}
+              style={{
+                fontSize: 10,
+                padding: "3px 9px",
+                borderRadius: 5,
+                background: "rgba(99,102,241,0.08)",
+                color: "var(--accent)",
+                border: "1px solid rgba(99,102,241,0.2)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontFamily: "'Sora', sans-serif",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              {isGenerating ? (
+                <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} />
+              ) : (
+                <Sparkles size={10} />
+              )}
+              {isGenerating ? "Generating..." : outline ? (expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />) : "MVP Outline"}
+              {outline && !isGenerating && (expanded ? " Hide" : " Show")}
+            </button>
+          )}
+
+          {idea.status === "idea" && (
+            <button
+              onClick={() => onValidate(idea.id)}
+              style={{
+                fontSize: 10,
+                padding: "3px 9px",
+                borderRadius: 5,
+                background: "rgba(52,211,153,0.08)",
+                color: "#34d399",
+                border: "1px solid rgba(52,211,153,0.2)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontFamily: "'Sora', sans-serif",
+              }}
+            >
+              Validate
+            </button>
+          )}
+          {idea.status !== "archived" && (
+            <button
+              onClick={() => onConvert(idea)}
+              disabled={converting === idea.id}
+              style={{
+                fontSize: 10,
+                padding: "3px 9px",
+                borderRadius: 5,
+                background: converting === idea.id ? "rgba(0,212,160,0.05)" : "var(--accent-dim)",
+                color: "var(--accent)",
+                border: "1px solid var(--border-accent)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontFamily: "'Sora', sans-serif",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <ArrowUpRight size={10} />
+              {converting === idea.id ? "..." : "→ Project"}
+            </button>
+          )}
+          {idea.status !== "archived" && (
+            <button
+              onClick={() => onArchive(idea.id)}
+              style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.6, padding: 3 }}
+            >
+              <Archive size={12} />
+            </button>
+          )}
+          <button
+            onClick={() => onDelete(idea.id)}
+            style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: 3 }}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OutlineField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "10px 12px", border: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.4 }}>{value}</div>
+    </div>
+  );
+}
+
+function OutlineListField({ label, items, color }: { label: string; items: string[]; color: string }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "10px 12px", border: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((item, i) => (
+          <div key={i} className="flex items-start gap-1.5">
+            <span style={{ color, fontSize: 10, marginTop: 2, flexShrink: 0 }}>▸</span>
+            <span style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.4 }}>{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
