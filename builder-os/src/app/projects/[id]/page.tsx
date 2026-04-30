@@ -43,6 +43,8 @@ export default function ProjectDetailPage() {
   const [showNewTask, setShowNewTask] = useState(false);
   const [editingLinks, setEditingLinks] = useState(false);
   const [linkForm, setLinkForm] = useState<Record<string, string>>({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = async () => {
     const [{ data: proj }, { data: taskData }, { data: contractorData }] =
@@ -98,6 +100,23 @@ export default function ProjectDetailPage() {
       deployment: project?.external_links?.deployment_url ?? "",
     });
     setEditingLinks(true);
+  };
+
+  const deleteProject = async () => {
+    setDeleting(true);
+    // Delete related records first, then the project
+    await supabase.from("contractor_updates").delete().in(
+      "contractor_id",
+      (await supabase.from("contractors").select("id").eq("project_id", id)).data?.map((c: { id: string }) => c.id) ?? []
+    );
+    await Promise.all([
+      supabase.from("contractors").delete().eq("project_id", id),
+      supabase.from("tasks").delete().eq("project_id", id),
+      supabase.from("project_knowledge").delete().eq("project_id", id),
+      supabase.from("plan_items").delete().eq("project_id", id),
+    ]);
+    await supabase.from("projects").delete().eq("id", id);
+    router.push("/projects");
   };
 
   if (loading) {
@@ -165,16 +184,45 @@ export default function ProjectDetailPage() {
             >
               ${project.revenue_monthly.toLocaleString()}<span style={{ fontSize: 12, fontWeight: 400 }}>/mo</span>
             </div>
-            <select
-              className="input-base"
-              style={{ width: "auto", fontSize: 12, padding: "6px 10px" }}
-              value={project.status}
-              onChange={(e) => updateProjectStatus(e.target.value as ProjectStatus)}
-            >
-              {(["idea","planned","building","monetizing","scaling","archived"] as ProjectStatus[]).map((s) => (
-                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                className="input-base"
+                style={{ width: "auto", fontSize: 12, padding: "6px 10px" }}
+                value={project.status}
+                onChange={(e) => updateProjectStatus(e.target.value as ProjectStatus)}
+              >
+                {(["idea","planned","building","monetizing","scaling","archived"] as ProjectStatus[]).map((s) => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                ))}
+              </select>
+              {!confirmDelete ? (
+                <button
+                  className="btn-ghost"
+                  onClick={() => setConfirmDelete(true)}
+                  style={{ padding: "6px 8px", color: "#f87171" }}
+                  title="Delete project"
+                >
+                  <Trash2 size={13} />
+                </button>
+              ) : (
+                <div className="flex items-center gap-2" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 7, padding: "5px 10px" }}>
+                  <span style={{ fontSize: 11, color: "#f87171" }}>Delete project?</span>
+                  <button
+                    onClick={deleteProject}
+                    disabled={deleting}
+                    style={{ fontSize: 11, fontWeight: 700, color: "#f87171", background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
+                  >
+                    {deleting ? "Deleting..." : "Yes, delete"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 2 }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
