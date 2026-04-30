@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import { NewTaskModal } from "@/components/NewTaskModal";
-import type { Project, Task, PROJECT_STATUS_WEIGHT } from "@/lib/types";
+import type { Project, Task, BlockedReason } from "@/lib/types";
+import { BLOCKER_REASON_CONFIG } from "@/lib/types";
 import {
   TrendingUp,
   FolderKanban,
@@ -16,6 +17,8 @@ import {
   ArrowRight,
   Clock,
   AlertCircle,
+  AlertTriangle,
+  DollarSign,
 } from "lucide-react";
 import { format, isToday, isPast, parseISO } from "date-fns";
 
@@ -58,9 +61,12 @@ export default function DashboardPage() {
     statusGroups[p.status] = (statusGroups[p.status] ?? 0) + 1;
   });
 
-  // Top 5 priority tasks for dashboard
+  const blockedTasks = tasks.filter((t) => t.is_blocked);
+  const totalUnblockCost = blockedTasks.reduce((s, t) => s + (t.unblock_cost ?? 0), 0);
+
+  // Top 5 priority tasks for dashboard (exclude blocked)
   const priorityMap: Record<string, number> = { high: 1, medium: 2, low: 3 };
-  const focusTasks = [...tasks]
+  const focusTasks = [...tasks.filter((t) => !t.is_blocked)]
     .sort((a, b) => (priorityMap[a.priority] ?? 3) - (priorityMap[b.priority] ?? 3))
     .slice(0, 5);
 
@@ -133,6 +139,15 @@ export default function DashboardPage() {
           value={String(todayTasks.length)}
           accent={todayTasks.length > 0}
         />
+        {blockedTasks.length > 0 && (
+          <StatCard
+            icon={<AlertTriangle size={16} />}
+            label="Blocked"
+            value={String(blockedTasks.length)}
+            sub={totalUnblockCost > 0 ? `$${totalUnblockCost.toFixed(0)} to unblock` : undefined}
+            warn
+          />
+        )}
       </div>
 
       {/* Main Grid */}
@@ -282,6 +297,62 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Blockers Section */}
+      {blockedTasks.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={15} style={{ color: "#fb923c" }} />
+              <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>What&apos;s Blocking You</h2>
+              <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>{blockedTasks.length}</span>
+            </div>
+            {totalUnblockCost > 0 && (
+              <div className="flex items-center gap-1.5" style={{ fontSize: 12, color: "#34d399" }}>
+                <DollarSign size={12} />
+                <span className="font-mono" style={{ fontWeight: 700 }}>${totalUnblockCost.toFixed(0)}</span>
+                <span style={{ color: "var(--text-muted)" }}>total to unblock</span>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {blockedTasks.map((task) => {
+              const cfg = task.blocked_reason ? BLOCKER_REASON_CONFIG[task.blocked_reason as BlockedReason] : null;
+              return (
+                <div key={task.id} className="card" style={{ padding: "12px 16px", borderColor: "rgba(251,146,60,0.2)" }}>
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle size={12} style={{ color: "#fb923c", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{task.title}</span>
+                        {task.project && (
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", background: "rgba(255,255,255,0.04)", padding: "1px 6px", borderRadius: 4 }}>
+                            {task.project.name}
+                          </span>
+                        )}
+                        {cfg && (
+                          <span style={{ fontSize: 10, color: cfg.color, background: `${cfg.color}18`, padding: "1px 7px", borderRadius: 4, fontWeight: 600 }}>
+                            {cfg.label}
+                          </span>
+                        )}
+                      </div>
+                      {task.blocked_notes && (
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, fontStyle: "italic" }}>{task.blocked_notes}</p>
+                      )}
+                    </div>
+                    {task.unblock_cost != null && (
+                      <div className="font-mono" style={{ fontSize: 12, color: "#34d399", flexShrink: 0, fontWeight: 600 }}>
+                        ${task.unblock_cost}/mo to fix
+                      </div>
+                    )}
+                    <ArrowRight size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Modals */}
       {showNewProject && (
         <NewProjectModal onClose={() => setShowNewProject(false)} onCreated={fetchData} />
@@ -383,7 +454,7 @@ function FocusTaskRow({ task, onUpdate }: { task: Task; onUpdate: () => void }) 
             transition: "all 0.12s",
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(0,212,160,0.2)";
+            (e.currentTarget as HTMLElement).style.background = "var(--accent-dim)";
             (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
           }}
           onMouseLeave={(e) => {

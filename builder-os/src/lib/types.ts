@@ -46,6 +46,8 @@ export interface Project {
   open_task_count?: number;
 }
 
+export type BlockedReason = "money" | "ai_limits" | "time" | "dependency" | "waiting" | "other";
+
 export interface Task {
   id: string;
   project_id: string;
@@ -55,10 +57,23 @@ export interface Task {
   priority: TaskPriority;
   assigned_to: string;
   due_date: string | null;
+  is_blocked: boolean;
+  blocked_reason: BlockedReason | null;
+  unblock_cost: number | null;
+  blocked_notes: string | null;
   created_at: string;
   // Joined
   project?: Pick<Project, "id" | "name" | "status">;
 }
+
+export const BLOCKER_REASON_CONFIG: Record<BlockedReason, { label: string; color: string }> = {
+  money:       { label: "Need Money",         color: "#34d399" },
+  ai_limits:   { label: "AI / API Limits",    color: "#a78bfa" },
+  time:        { label: "Need More Time",      color: "#60a5fa" },
+  dependency:  { label: "Waiting on Dep",     color: "#fbbf24" },
+  waiting:     { label: "Waiting on Someone", color: "#fb923c" },
+  other:       { label: "Other",              color: "#6b7280" },
+};
 
 export interface Idea {
   id: string;
