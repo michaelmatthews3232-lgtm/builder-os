@@ -385,8 +385,6 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* Live integration status */}
-            <LiveIntegrationStatus project={project} />
           </div>
         )}
 
@@ -572,6 +570,16 @@ function LinkRow({
 
 const PLATFORMS = ["Upwork", "Fiverr", "Direct", "Toptal", "LinkedIn", "Other"];
 
+interface ContractorPayment {
+  id: string;
+  contractor_id: string;
+  project_id: string;
+  amount: number;
+  paid_date: string;
+  notes: string | null;
+  created_at: string;
+}
+
 function ContractorsTab({
   projectId,
   contractors,
@@ -586,9 +594,13 @@ function ContractorsTab({
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [activeSubTab, setActiveSubTab] = useState<Record<string, "notes" | "payments">>({});
   const [updates, setUpdates] = useState<Record<string, ContractorUpdate[]>>({});
+  const [payments, setPayments] = useState<Record<string, ContractorPayment[]>>({});
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
   const [addingNote, setAddingNote] = useState<string | null>(null);
+  const [addingPayment, setAddingPayment] = useState<string | null>(null);
+  const [paymentForm, setPaymentForm] = useState({ amount: "", paid_date: new Date().toISOString().split("T")[0], notes: "" });
 
   const fetchUpdates = async (contractorId: string) => {
     const { data } = await supabase
@@ -599,6 +611,15 @@ function ContractorsTab({
     setUpdates((prev) => ({ ...prev, [contractorId]: (data as ContractorUpdate[]) ?? [] }));
   };
 
+  const fetchPayments = async (contractorId: string) => {
+    const { data } = await supabase
+      .from("contractor_payments")
+      .select("*")
+      .eq("contractor_id", contractorId)
+      .order("paid_date", { ascending: false });
+    setPayments((prev) => ({ ...prev, [contractorId]: (data as ContractorPayment[]) ?? [] }));
+  };
+
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -607,6 +628,7 @@ function ContractorsTab({
       } else {
         next.add(id);
         if (!updates[id]) fetchUpdates(id);
+        if (!payments[id]) fetchPayments(id);
       }
       return next;
     });
@@ -638,11 +660,7 @@ function ContractorsTab({
   const addNote = async (contractorId: string) => {
     const note = noteInputs[contractorId]?.trim();
     if (!note) return;
-    await supabase.from("contractor_updates").insert({
-      contractor_id: contractorId,
-      project_id: projectId,
-      note,
-    });
+    await supabase.from("contractor_updates").insert({ contractor_id: contractorId, project_id: projectId, note });
     setNoteInputs((prev) => ({ ...prev, [contractorId]: "" }));
     setAddingNote(null);
     fetchUpdates(contractorId);
@@ -652,6 +670,28 @@ function ContractorsTab({
     await supabase.from("contractor_updates").delete().eq("id", noteId);
     fetchUpdates(contractorId);
   };
+
+  const addPayment = async (contractorId: string) => {
+    if (!paymentForm.amount) return;
+    await supabase.from("contractor_payments").insert({
+      contractor_id: contractorId,
+      project_id: projectId,
+      amount: parseFloat(paymentForm.amount),
+      paid_date: paymentForm.paid_date,
+      notes: paymentForm.notes.trim() || null,
+    });
+    setPaymentForm({ amount: "", paid_date: new Date().toISOString().split("T")[0], notes: "" });
+    setAddingPayment(null);
+    fetchPayments(contractorId);
+  };
+
+  const deletePayment = async (contractorId: string, paymentId: string) => {
+    await supabase.from("contractor_payments").delete().eq("id", paymentId);
+    fetchPayments(contractorId);
+  };
+
+  const totalPaid = (contractorId: string) =>
+    (payments[contractorId] ?? []).reduce((s, p) => s + p.amount, 0);
 
   const statusColor = (s: string) =>
     s === "active" ? { bg: "rgba(52,211,153,0.1)", color: "#34d399" } :
@@ -687,15 +727,7 @@ function ContractorsTab({
             </div>
             <div>
               <label>Hourly Rate ($/hr)</label>
-              <input
-                className="input-base mt-1"
-                placeholder="0.00"
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.hourly_rate}
-                onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
-              />
+              <input className="input-base mt-1" placeholder="0.00" type="number" min="0" step="0.01" value={form.hourly_rate} onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })} />
             </div>
             <div>
               <label>Email</label>
@@ -728,7 +760,10 @@ function ContractorsTab({
           {contractors.map((c) => {
             const sc = statusColor(c.status);
             const isOpen = expanded.has(c.id);
+            const subTab = activeSubTab[c.id] ?? "notes";
             const contractorUpdates = updates[c.id] ?? [];
+            const contractorPayments = payments[c.id] ?? [];
+            const paid = totalPaid(c.id);
             return (
               <div key={c.id} className="card" style={{ overflow: "hidden" }}>
                 <div style={{ padding: "13px 16px", cursor: "pointer" }} onClick={() => toggleExpand(c.id)}>
@@ -750,8 +785,13 @@ function ContractorsTab({
                         <div className="flex items-center gap-3 mt-0.5">
                           {c.email && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.email}</span>}
                           {c.hourly_rate != null && (
-                            <span className="font-mono" style={{ fontSize: 11, color: "#34d399", display: "flex", alignItems: "center", gap: 2 }}>
-                              <DollarSign size={10} />{c.hourly_rate}/hr
+                            <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 2 }}>
+                              ${c.hourly_rate}/hr
+                            </span>
+                          )}
+                          {paid > 0 && (
+                            <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, color: "#f87171", display: "flex", alignItems: "center", gap: 2 }}>
+                              <DollarSign size={10} />{paid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} paid
                             </span>
                           )}
                         </div>
@@ -769,54 +809,159 @@ function ContractorsTab({
                 </div>
 
                 {isOpen && (
-                  <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px", background: "rgba(255,255,255,0.015)" }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "flex", alignItems: "center", gap: 5 }}>
-                        <MessageSquare size={11} /> Progress Notes
-                      </span>
-                      {addingNote !== c.id && (
-                        <button className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setAddingNote(c.id)}>
-                          <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Add Note
+                  <div style={{ borderTop: "1px solid var(--border)", background: "rgba(255,255,255,0.015)" }}>
+                    {/* Sub-tabs */}
+                    <div className="flex" style={{ borderBottom: "1px solid var(--border)", padding: "0 16px" }}>
+                      {(["notes", "payments"] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveSubTab((prev) => ({ ...prev, [c.id]: tab }))}
+                          style={{
+                            fontSize: 11, fontWeight: 600, padding: "8px 12px", background: "none", border: "none",
+                            borderBottom: `2px solid ${subTab === tab ? "var(--accent)" : "transparent"}`,
+                            color: subTab === tab ? "var(--accent)" : "var(--text-muted)",
+                            cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em",
+                            marginBottom: -1,
+                          }}
+                        >
+                          {tab === "payments"
+                            ? `Payments${paid > 0 ? ` · $${paid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}`
+                            : "Notes"}
                         </button>
-                      )}
+                      ))}
                     </div>
 
-                    {addingNote === c.id && (
-                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                        <textarea
-                          className="input-base"
-                          placeholder="Progress update, deliverable status, blocker, etc."
-                          value={noteInputs[c.id] ?? ""}
-                          onChange={(e) => setNoteInputs((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                          style={{ minHeight: 60, fontSize: 12, flex: 1 }}
-                          autoFocus
-                        />
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <button className="btn-primary" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => addNote(c.id)}>Save</button>
-                          <button className="btn-ghost" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => setAddingNote(null)}>Cancel</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {contractorUpdates.length === 0 ? (
-                      <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No updates yet. Add a note to track progress.</p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {contractorUpdates.map((u) => (
-                          <div key={u.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>{u.note}</p>
-                              <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, display: "block" }}>
-                                {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            </div>
-                            <button onClick={() => deleteNote(c.id, u.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0, alignSelf: "flex-start" }}>
-                              <Trash2 size={12} />
-                            </button>
+                    <div style={{ padding: "14px 16px" }}>
+                      {subTab === "notes" && (
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "flex", alignItems: "center", gap: 5 }}>
+                              <MessageSquare size={11} /> Progress Notes
+                            </span>
+                            {addingNote !== c.id && (
+                              <button className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setAddingNote(c.id)}>
+                                <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Add Note
+                              </button>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          {addingNote === c.id && (
+                            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                              <textarea
+                                className="input-base"
+                                placeholder="Progress update, deliverable status, blocker, etc."
+                                value={noteInputs[c.id] ?? ""}
+                                onChange={(e) => setNoteInputs((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                                style={{ minHeight: 60, fontSize: 12, flex: 1 }}
+                                autoFocus
+                              />
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                <button className="btn-primary" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => addNote(c.id)}>Save</button>
+                                <button className="btn-ghost" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => setAddingNote(null)}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+                          {contractorUpdates.length === 0 ? (
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No updates yet.</p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {contractorUpdates.map((u) => (
+                                <div key={u.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>{u.note}</p>
+                                    <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, display: "block" }}>
+                                      {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                    </span>
+                                  </div>
+                                  <button onClick={() => deleteNote(c.id, u.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {subTab === "payments" && (
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "flex", alignItems: "center", gap: 5 }}>
+                              <DollarSign size={11} /> Payment History
+                            </span>
+                            {addingPayment !== c.id && (
+                              <button className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setAddingPayment(c.id)}>
+                                <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Log Payment
+                              </button>
+                            )}
+                          </div>
+
+                          {addingPayment === c.id && (
+                            <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                                <div>
+                                  <label>Amount ($) *</label>
+                                  <input
+                                    className="input-base mt-1"
+                                    type="number" min="0" step="0.01" placeholder="0.00"
+                                    value={paymentForm.amount}
+                                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                                    autoFocus
+                                  />
+                                </div>
+                                <div>
+                                  <label>Date *</label>
+                                  <input
+                                    className="input-base mt-1"
+                                    type="date"
+                                    value={paymentForm.paid_date}
+                                    onChange={(e) => setPaymentForm({ ...paymentForm, paid_date: e.target.value })}
+                                  />
+                                </div>
+                                <div style={{ gridColumn: "1 / -1" }}>
+                                  <label>Notes (optional)</label>
+                                  <input
+                                    className="input-base mt-1"
+                                    placeholder="e.g. Milestone 1, logo design, hours 10–14..."
+                                    value={paymentForm.notes}
+                                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button className="btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={() => setAddingPayment(null)}>Cancel</button>
+                                <button className="btn-primary" style={{ fontSize: 11, padding: "5px 12px" }} onClick={() => addPayment(c.id)} disabled={!paymentForm.amount}>
+                                  Log Payment
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {contractorPayments.length === 0 ? (
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No payments logged yet.</p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                              {contractorPayments.map((p) => (
+                                <div key={p.id} className="flex items-center gap-3" style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: "#f87171" }}>
+                                    ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span style={{ fontSize: 11, color: "var(--text-secondary)", flex: 1 }}>{p.notes ?? ""}</span>
+                                  <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                                    {new Date(p.paid_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                  </span>
+                                  <button onClick={() => deletePayment(c.id, p.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                              <div style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: "var(--text-primary)", textAlign: "right" }}>
+                                Total: <span className="font-mono" style={{ color: "#f87171" }}>${paid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

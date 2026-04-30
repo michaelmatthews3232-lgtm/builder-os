@@ -101,15 +101,20 @@ export default function FinancePage() {
     billing_cycle: BillingCycle; project_id: string; notes: string;
   }>({ name: "", amount: "", category: "other", billing_cycle: "monthly", project_id: "", notes: "" });
 
+  const [contractorTotalPaid, setContractorTotalPaid] = useState(0);
+
   const fetchAll = useCallback(async () => {
-    const [{ data: llcData }, { data: expData }, { data: projData }] = await Promise.all([
+    const [{ data: llcData }, { data: expData }, { data: projData }, { data: payData }] = await Promise.all([
       supabase.from("llc_profile").select("*").limit(1).single(),
       supabase.from("expenses").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name, status, revenue_monthly, entity").neq("status", "archived"),
+      supabase.from("contractor_payments").select("amount"),
     ]);
     setLlc(llcData as LLCProfile | null);
     setExpenses((expData as Expense[]) ?? []);
     setProjects((projData as Project[]) ?? []);
+    const total = ((payData ?? []) as { amount: number }[]).reduce((s, p) => s + p.amount, 0);
+    setContractorTotalPaid(total);
     setLoading(false);
   }, []);
 
@@ -193,7 +198,7 @@ export default function FinancePage() {
   const monthlyRevenue = projects.reduce((s, p) => s + (p.revenue_monthly ?? 0), 0);
   const activeExpenses = expenses.filter((e) => e.active);
   const monthlyExpenses = activeExpenses.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
-  const netMonthly = monthlyRevenue - monthlyExpenses;
+  const netMonthly = monthlyRevenue - monthlyExpenses - contractorTotalPaid;
   const insights = generateInsights(projects, monthlyRevenue, monthlyExpenses);
 
   const expensesByCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<ExpenseCategory, Expense[]>>((acc, cat) => {
@@ -259,10 +264,11 @@ export default function FinancePage() {
       </div>
 
       {/* Summary stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {[
           { label: "Monthly Revenue", value: `$${monthlyRevenue.toLocaleString()}`, color: "#34d399", icon: <TrendingUp size={16} /> },
           { label: "Monthly Expenses", value: `$${monthlyExpenses.toFixed(0)}`, color: "#f87171", icon: <TrendingDown size={16} /> },
+          { label: "Contractor Paid", value: `$${contractorTotalPaid.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, color: "#f87171", icon: <Users size={16} /> },
           {
             label: "Net Monthly",
             value: `${netMonthly >= 0 ? "+" : ""}$${netMonthly.toFixed(0)}`,
