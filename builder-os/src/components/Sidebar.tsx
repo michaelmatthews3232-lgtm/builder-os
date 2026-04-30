@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   DollarSign,
   Plug,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -27,6 +28,13 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch("/api/auth", { method: "DELETE" });
+    router.push("/login");
+    router.refresh();
+  };
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -142,14 +150,25 @@ export function Sidebar() {
       {/* Footer */}
       <div
         style={{
-          padding: "14px 18px",
+          padding: "10px 12px",
           borderTop: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-muted)",
-          fontFamily: "JetBrains Mono, monospace",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
-        v0.1.0 — personal
+        <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>
+          v0.1.0 — personal
+        </span>
+        <button
+          onClick={handleLogout}
+          title="Lock"
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 6, borderRadius: 6, display: "flex", alignItems: "center" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+        >
+          <LogOut size={13} />
+        </button>
       </div>
     </aside>
   );
