@@ -30,6 +30,8 @@ import {
   GitCommit,
   AlertCircle,
   Sparkles,
+  Share2,
+  Globe2,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -40,7 +42,7 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "contractors" | "vault">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "links" | "contractors" | "vault" | "social">("tasks");
   const [showNewTask, setShowNewTask] = useState(false);
   const [editingLinks, setEditingLinks] = useState(false);
   const [linkForm, setLinkForm] = useState<Record<string, string>>({});
@@ -298,7 +300,7 @@ export default function ProjectDetailPage() {
       {/* Tabs */}
       <div>
         <div className="flex items-center gap-0" style={{ borderBottom: "1px solid var(--border)", marginBottom: 20 }}>
-          {(["tasks", "links", "contractors", "vault"] as const).map((tab) => (
+          {(["tasks", "links", "social", "contractors", "vault"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -471,8 +473,7 @@ export default function ProjectDetailPage() {
                 </button>
               )}
             </div>
-            <div className="card" style={{ padding: "10px 16px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <LinkRow
                   icon={<CreditCard size={13} />}
                   label="Stripe"
@@ -519,13 +520,17 @@ export default function ProjectDetailPage() {
                   onChange={(v) => setLinkForm({ ...linkForm, deployment: v })}
                 />
                 {(project.external_links?.other_tools ?? []).map((tool, i) => (
-                  <a key={i} href={tool.url} target="_blank" rel="noreferrer" className="ext-link">
-                    <ExternalLink size={12} />
-                    {tool.name}
-                    <span style={{ marginLeft: "auto", fontSize: 10, opacity: 0.5 }}>↗</span>
-                  </a>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "rgba(255,255,255,0.02)" }}>
+                    <span style={{ color: "var(--accent)" }}><ExternalLink size={13} /></span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{tool.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.url.replace(/^https?:\/\//, "")}</div>
+                    </div>
+                    <a href={tool.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 7, fontSize: 12, fontWeight: 700, background: "var(--accent)", color: "#fff", textDecoration: "none", flexShrink: 0 }}>
+                      Visit <ExternalLink size={11} />
+                    </a>
+                  </div>
                 ))}
-              </div>
             </div>
 
           </div>
@@ -534,6 +539,11 @@ export default function ProjectDetailPage() {
         {/* Contractors Tab */}
         {activeTab === "contractors" && (
           <ContractorsTab projectId={id} contractors={contractors} onUpdate={fetchData} />
+        )}
+
+        {/* Social Tab */}
+        {activeTab === "social" && (
+          <SocialTab projectId={id} />
         )}
 
         {/* Vault Tab */}
@@ -681,33 +691,40 @@ function LinkRow({
 
   if (!url) {
     return (
-      <div className="ext-link" style={{ opacity: 0.4, cursor: "default" }}>
-        {icon}
-        <span>{label}</span>
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>—</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border)", opacity: 0.35 }}>
+        <span style={{ color: "var(--text-muted)" }}>{icon}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>{label}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>Not set</span>
       </div>
     );
   }
 
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="ext-link">
-      {icon}
-      <span>{label}</span>
-      <span
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "rgba(255,255,255,0.02)" }}>
+      <span style={{ color: "var(--accent)" }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {url.replace(/^https?:\/\//, "")}
+        </div>
+      </div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
         style={{
-          marginLeft: "auto",
-          fontSize: 10,
-          color: "var(--text-muted)",
-          maxWidth: 200,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "8px 16px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+          background: "var(--accent)", color: "#fff", textDecoration: "none",
+          flexShrink: 0, transition: "opacity 0.12s", letterSpacing: "0.01em",
         }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        onClick={(e) => e.stopPropagation()}
       >
-        {url.replace("https://", "")}
-      </span>
-      <ExternalLink size={10} style={{ flexShrink: 0 }} />
-    </a>
+        Visit <ExternalLink size={11} />
+      </a>
+    </div>
   );
 }
 
@@ -1107,6 +1124,184 @@ function ContractorsTab({
                     </div>
                   </div>
                 )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Social Media Tab ─────────────────────────────────────────────────────────
+
+const SOCIAL_PLATFORMS = [
+  "Instagram", "X / Twitter", "TikTok", "YouTube", "LinkedIn",
+  "Facebook", "Threads", "Pinterest", "Snapchat", "Other",
+];
+
+const PLATFORM_COLORS: Record<string, string> = {
+  "Instagram": "#e1306c", "X / Twitter": "#1da1f2", "TikTok": "#ff0050",
+  "YouTube": "#ff0000", "LinkedIn": "#0077b5", "Facebook": "#1877f2",
+  "Threads": "#8b5cf6", "Pinterest": "#e60023", "Snapchat": "#fbbf24",
+};
+
+interface SocialAccount {
+  id: string;
+  project_id: string;
+  platform: string;
+  handle: string | null;
+  url: string | null;
+  followers: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+function SocialTab({ projectId }: { projectId: string }) {
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ platform: "Instagram", handle: "", url: "", followers: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+
+  const fetchAccounts = async () => {
+    const { data } = await supabase
+      .from("project_social")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true });
+    setAccounts((data as SocialAccount[]) ?? []);
+  };
+
+  useEffect(() => { fetchAccounts(); }, [projectId]);
+
+  const addAccount = async () => {
+    if (!form.platform) return;
+    setSaving(true);
+    await supabase.from("project_social").insert({
+      project_id: projectId,
+      platform: form.platform,
+      handle: form.handle.trim() || null,
+      url: form.url.trim() || null,
+      followers: form.followers ? parseInt(form.followers) : null,
+      notes: form.notes.trim() || null,
+    });
+    setForm({ platform: "Instagram", handle: "", url: "", followers: "", notes: "" });
+    setAdding(false);
+    setSaving(false);
+    fetchAccounts();
+  };
+
+  const deleteAccount = async (id: string) => {
+    await supabase.from("project_social").delete().eq("id", id);
+    fetchAccounts();
+  };
+
+  const totalFollowers = accounts.reduce((s, a) => s + (a.followers ?? 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Share2 size={14} style={{ color: "var(--accent)" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Social Media</span>
+          {totalFollowers > 0 && (
+            <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {totalFollowers.toLocaleString()} total followers
+            </span>
+          )}
+        </div>
+        <button className="btn-primary" onClick={() => setAdding(true)}>
+          <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
+          Add Account
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label>Platform *</label>
+              <select className="input-base mt-1" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+                {SOCIAL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Handle / Username</label>
+              <input className="input-base mt-1" placeholder="@yourbrand" value={form.handle} onChange={(e) => setForm({ ...form, handle: e.target.value })} autoFocus />
+            </div>
+            <div>
+              <label>Followers</label>
+              <input className="input-base mt-1" type="number" placeholder="0" value={form.followers} onChange={(e) => setForm({ ...form, followers: e.target.value })} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label>Profile URL</label>
+              <input className="input-base mt-1" placeholder="https://instagram.com/yourbrand" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label>Notes (optional)</label>
+              <input className="input-base mt-1" placeholder="e.g. Main brand account, posting 3x/week" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setAdding(false)}>Cancel</button>
+            <button className="btn-primary" onClick={addAccount} disabled={saving}>
+              {saving ? "Saving..." : "Add Account"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {accounts.length === 0 && !adding ? (
+        <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
+          <Globe2 size={24} style={{ margin: "0 auto 10px" }} />
+          <p style={{ marginBottom: 12, fontSize: 13 }}>No social accounts added yet.</p>
+          <button className="btn-primary" onClick={() => setAdding(true)}>Add First Account</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {accounts.map((a) => {
+            const color = PLATFORM_COLORS[a.platform] ?? "var(--accent)";
+            return (
+              <div key={a.id} className="card" style={{ padding: "14px 18px" }}>
+                <div className="flex items-center gap-4">
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                    background: `${color}18`, border: `1px solid ${color}30`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color, fontFamily: "JetBrains Mono, monospace" }}>
+                      {a.platform.slice(0, 2).toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{a.platform}</span>
+                      {a.handle && (
+                        <span className="font-mono" style={{ fontSize: 12, color }}>@{a.handle.replace(/^@/, "")}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      {a.followers != null && (
+                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                          {a.followers.toLocaleString()} followers
+                        </span>
+                      )}
+                      {a.notes && (
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{a.notes}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {a.url && (
+                      <a href={a.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 16px", borderRadius: 7, fontSize: 12, fontWeight: 700, background: color, color: "#fff", textDecoration: "none" }}>
+                        Visit <ExternalLink size={10} />
+                      </a>
+                    )}
+                    <button onClick={() => deleteAccount(a.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}

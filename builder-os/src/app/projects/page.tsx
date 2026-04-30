@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewProjectModal } from "@/components/NewProjectModal";
 import type { Project, ProjectStatus } from "@/lib/types";
-import { Plus, ArrowRight, Search, DollarSign } from "lucide-react";
+import { Plus, ArrowRight, Search, DollarSign, AlertTriangle, X } from "lucide-react";
 import { FolderDropZone, type ParsedProject } from "@/components/FolderDropZone";
 import { ProjectImportModal } from "@/components/ProjectImportModal";
 
@@ -27,6 +27,7 @@ export default function ProjectsPage() {
   const [filterStatus, setFilterStatus] = useState<ProjectStatus | "all">("all");
   const [importData, setImportData] = useState<ParsedProject | null>(null);
   const [importFileCount, setImportFileCount] = useState(0);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
   const fetchProjects = async () => {
     const { data } = await supabase
@@ -55,6 +56,21 @@ export default function ProjectsPage() {
 
   const totalRevenue = projects.reduce((s, p) => s + p.revenue_monthly, 0);
 
+  const alerts: { id: string; project: Project; message: string }[] = [];
+  for (const p of projects) {
+    if (p.status === "archived") continue;
+    if ((p.status === "monetizing" || p.status === "scaling") && !p.revenue_monthly) {
+      alerts.push({ id: `${p.id}-rev`, project: p, message: `is tagged "${p.status}" but has $0 revenue — update the monthly revenue.` });
+    }
+    if ((p.status === "building" || p.status === "monetizing" || p.status === "scaling") && !p.external_links?.deployment_url) {
+      alerts.push({ id: `${p.id}-deploy`, project: p, message: `has no deployment URL set — add it in the Links tab.` });
+    }
+    if (!p.description) {
+      alerts.push({ id: `${p.id}-desc`, project: p, message: `is missing a description — add one to keep context clear.` });
+    }
+  }
+  const visibleAlerts = alerts.filter((a) => !dismissedAlerts.has(a.id));
+
   return (
     <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       {/* Header */}
@@ -78,6 +94,42 @@ export default function ProjectsPage() {
           New Project
         </button>
       </div>
+
+      {/* Missing info alerts */}
+      {visibleAlerts.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle size={13} style={{ color: "#fbbf24" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              {visibleAlerts.length} project alert{visibleAlerts.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          {visibleAlerts.slice(0, 5).map((alert) => (
+            <div
+              key={alert.id}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 14px", borderRadius: 8,
+                background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)",
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24", flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
+                <Link href={`/projects/${alert.project.id}`} style={{ color: "var(--accent)", fontWeight: 700, textDecoration: "none" }}>
+                  {alert.project.name}
+                </Link>
+                {" "}{alert.message}
+              </div>
+              <button
+                onClick={() => setDismissedAlerts((prev) => new Set([...prev, alert.id]))}
+                style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Folder Import */}
       <FolderDropZone
