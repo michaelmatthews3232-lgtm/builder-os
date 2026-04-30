@@ -104,6 +104,8 @@ export default function FinancePage() {
   }>({ name: "", amount: "", category: "other", billing_cycle: "monthly", project_id: "", notes: "" });
 
   const [contractorTotalPaid, setContractorTotalPaid] = useState(0);
+  const [contractorThisMonth, setContractorThisMonth] = useState(0);
+  const [contractorByProject, setContractorByProject] = useState<Record<string, number>>({});
   const [snapshots, setSnapshots] = useState<FinanceSnapshot[]>([]);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [showEinBank, setShowEinBank] = useState(false);
@@ -113,14 +115,25 @@ export default function FinancePage() {
       supabase.from("llc_profile").select("*").limit(1).single(),
       supabase.from("expenses").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name, status, revenue_monthly, entity").neq("status", "archived"),
-      supabase.from("contractor_payments").select("amount"),
+      supabase.from("contractor_payments").select("project_id, amount, paid_date"),
       supabase.from("finance_snapshots").select("*").order("month", { ascending: false }),
     ]);
     setLlc(llcData as LLCProfile | null);
     setExpenses((expData as Expense[]) ?? []);
     setProjects((projData as Project[]) ?? []);
-    const total = ((payData ?? []) as { amount: number }[]).reduce((s, p) => s + p.amount, 0);
-    setContractorTotalPaid(total);
+
+    const payments = (payData ?? []) as { project_id: string | null; amount: number; paid_date: string }[];
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const allTimeTotal = payments.reduce((s, p) => s + p.amount, 0);
+    const thisMonth = payments.filter((p) => p.paid_date?.startsWith(currentMonth)).reduce((s, p) => s + p.amount, 0);
+    const byProject: Record<string, number> = {};
+    for (const p of payments) {
+      if (p.project_id) byProject[p.project_id] = (byProject[p.project_id] ?? 0) + p.amount;
+    }
+    setContractorTotalPaid(allTimeTotal);
+    setContractorThisMonth(thisMonth);
+    setContractorByProject(byProject);
+
     setSnapshots((snapData as FinanceSnapshot[]) ?? []);
     setLoading(false);
   }, []);
@@ -179,7 +192,8 @@ export default function FinancePage() {
       month,
       revenue: Math.round(monthlyRevenue * 100) / 100,
       expenses: Math.round(monthlyExpenses * 100) / 100,
-      net: Math.round((monthlyRevenue - monthlyExpenses) * 100) / 100,
+      contractors: Math.round(contractorThisMonth * 100) / 100,
+      net: Math.round(netMonthly * 100) / 100,
     };
     if (existing) {
       await supabase.from("finance_snapshots").update(payload).eq("id", existing.id);
@@ -256,13 +270,9 @@ export default function FinancePage() {
   const monthlyRevenue = projects.reduce((s, p) => s + (p.revenue_monthly ?? 0), 0);
   const activeExpenses = expenses.filter((e) => e.active);
   const monthlyExpenses = activeExpenses.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
-  const netMonthly = monthlyRevenue - monthlyExpenses - contractorTotalPaid;
+  // Net = revenue minus recurring expenses minus any contractor payments logged this calendar month
+  const netMonthly = monthlyRevenue - monthlyExpenses - contractorThisMonth;
   const insights = generateInsights(projects, monthlyRevenue, monthlyExpenses);
-
-  const expensesByCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<ExpenseCategory, Expense[]>>((acc, cat) => {
-    acc[cat as ExpenseCategory] = activeExpenses.filter((e) => e.category === cat);
-    return acc;
-  }, {} as Record<ExpenseCategory, Expense[]>);
 
   const exportTaxCsv = () => {
     const year = new Date().getFullYear();
@@ -324,16 +334,23 @@ export default function FinancePage() {
       {/* Summary stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {[
-          { label: "Monthly Revenue", value: `$${monthlyRevenue.toLocaleString()}`, color: "#34d399", icon: <TrendingUp size={16} /> },
-          { label: "Monthly Expenses", value: `$${monthlyExpenses.toFixed(0)}`, color: "#f87171", icon: <TrendingDown size={16} /> },
-          { label: "Contractor Paid", value: `$${contractorTotalPaid.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, color: "#f87171", icon: <Users size={16} /> },
+          { label: "Monthly Revenue", value: `$${monthlyRevenue.toLocaleString()}`, color: "#34d399", icon: <TrendingUp size={16} />, sub: null },
+          { label: "Recurring Expenses", value: `$${monthlyExpenses.toFixed(0)}/mo`, color: "#f87171", icon: <TrendingDown size={16} />, sub: null },
           {
-            label: "Net Monthly",
+            label: "Contractors This Month",
+            value: `$${contractorThisMonth.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+            color: "#f87171",
+            icon: <Users size={16} />,
+            sub: contractorTotalPaid > 0 ? `$${contractorTotalPaid.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} all-time` : null,
+          },
+          {
+            label: "Net This Month",
             value: `${netMonthly >= 0 ? "+" : ""}$${netMonthly.toFixed(0)}`,
             color: netMonthly >= 0 ? "#34d399" : "#f87171",
             icon: <DollarSign size={16} />,
+            sub: "revenue − expenses − contractors",
           },
-        ].map(({ label, value, color, icon }) => (
+        ].map(({ label, value, color, icon, sub }) => (
           <div key={label} className="card" style={{ padding: "18px 20px" }}>
             <div className="flex items-center gap-2 mb-2" style={{ color }}>
               {icon}
@@ -342,6 +359,7 @@ export default function FinancePage() {
               </span>
             </div>
             <div className="font-mono" style={{ fontSize: 26, fontWeight: 700, color }}>{value}</div>
+            {sub && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>{sub}</div>}
           </div>
         ))}
       </div>
@@ -596,7 +614,6 @@ export default function FinancePage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {projects.map((p) => {
-            const ec = ENTITY_CONFIG[p.entity ?? "unknown"];
             return (
               <div key={p.id} className="flex items-center justify-between" style={{ padding: "8px 12px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
                 <div className="flex items-center gap-3">
@@ -633,24 +650,25 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* Per-Project Expense Breakdown */}
-      {expenses.length > 0 && (
+      {/* Per-Project Cost Breakdown */}
+      {(expenses.length > 0 || Object.keys(contractorByProject).length > 0) && (
         <div className="card" style={{ padding: "20px 22px" }}>
           <div className="flex items-center gap-2 mb-4">
             <Package size={14} style={{ color: "var(--accent)" }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Expenses by Project</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Cost Breakdown by Project</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>— expenses + contractors</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* General / unassigned */}
+            {/* General / unassigned expenses */}
             {(() => {
               const general = expenses.filter((e) => !e.project_id && e.active);
+              if (!general.length) return null;
               const generalTotal = general.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
               const byCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<string, Expense[]>>((acc, cat) => {
                 const catExp = general.filter((e) => e.category === cat);
                 if (catExp.length) acc[cat] = catExp;
                 return acc;
               }, {});
-              if (!general.length) return null;
               return (
                 <div style={{ borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" }}>
                   <div className="flex items-center justify-between" style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)" }}>
@@ -671,35 +689,55 @@ export default function FinancePage() {
                 </div>
               );
             })()}
+
             {/* Per project */}
             {projects.map((proj) => {
               const projExp = expenses.filter((e) => e.project_id === proj.id && e.active);
-              if (!projExp.length) return null;
-              const projTotal = projExp.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
+              const contractorPaid = contractorByProject[proj.id] ?? 0;
+              if (!projExp.length && !contractorPaid) return null;
+
+              const recurringTotal = projExp.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
               const oneTime = expenses.filter((e) => e.project_id === proj.id && e.billing_cycle === "one_time").reduce((s, e) => s + e.amount, 0);
+              const totalCost = recurringTotal + contractorPaid;
+              const net = proj.revenue_monthly - recurringTotal; // contractors excluded from monthly net (variable)
+              const netColor = net >= 0 ? "#34d399" : "#f87171";
+
               const byCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<string, Expense[]>>((acc, cat) => {
                 const catExp = projExp.filter((e) => e.category === cat);
                 if (catExp.length) acc[cat] = catExp;
                 return acc;
               }, {});
+
               return (
                 <div key={proj.id} style={{ borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" }}>
+                  {/* Header row */}
                   <div className="flex items-center justify-between" style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)" }}>
                     <div className="flex items-center gap-3">
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{proj.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{proj.name}</span>
                       {proj.revenue_monthly > 0 && (
-                        <span className="font-mono" style={{ fontSize: 10, color: "#34d399" }}>${proj.revenue_monthly}/mo revenue</span>
+                        <span className="font-mono" style={{ fontSize: 10, color: "#34d399", background: "rgba(52,211,153,0.1)", padding: "1px 6px", borderRadius: 4 }}>
+                          ${proj.revenue_monthly.toLocaleString()}/mo revenue
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">
                       {oneTime > 0 && (
-                        <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>${oneTime.toFixed(0)} invested</span>
+                        <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>${oneTime.toFixed(0)} invested</span>
                       )}
-                      {projTotal > 0 && (
-                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>${projTotal.toFixed(2)}/mo</span>
+                      {totalCost > 0 && (
+                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>
+                          ${totalCost.toFixed(0)} total cost
+                        </span>
+                      )}
+                      {proj.revenue_monthly > 0 && (
+                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: netColor }}>
+                          {net >= 0 ? "+" : ""}${net.toFixed(0)}/mo net
+                        </span>
                       )}
                     </div>
                   </div>
+
+                  {/* Cost pills */}
                   <div style={{ padding: "8px 14px 10px", display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {Object.entries(byCategory).map(([cat, exps]) => {
                       const cfg = CATEGORY_CONFIG[cat as ExpenseCategory];
@@ -711,6 +749,11 @@ export default function FinancePage() {
                         </span>
                       );
                     })}
+                    {contractorPaid > 0 && (
+                      <span style={{ fontSize: 11, color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", padding: "2px 8px", borderRadius: 99, display: "flex", alignItems: "center", gap: 4 }}>
+                        <Users size={11} /> Contractors ${contractorPaid.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} paid
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -943,20 +986,22 @@ export default function FinancePage() {
           </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 1fr 40px", gap: 8, padding: "6px 10px" }}>
-              {["Month", "Revenue", "Expenses", "Net", ""].map((h) => (
+            <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 1fr 1fr 36px", gap: 8, padding: "6px 10px" }}>
+              {["Month", "Revenue", "Expenses", "Contractors", "Net", ""].map((h) => (
                 <span key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)" }}>{h}</span>
               ))}
             </div>
             {snapshots.map((s) => {
-              const netColor = s.net >= 0 ? "#34d399" : "#f87171";
+              const snap = s as FinanceSnapshot & { contractors?: number };
+              const netColor = snap.net >= 0 ? "#34d399" : "#f87171";
               return (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr 1fr 40px", gap: 8, padding: "10px 10px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", alignItems: "center" }}>
-                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{s.month}</span>
-                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>${s.revenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: "#f87171" }}>${s.expenses.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <span className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: netColor }}>{s.net >= 0 ? "+" : ""}${s.net.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  <button onClick={() => deleteSnapshot(s.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <div key={snap.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 1fr 1fr 36px", gap: 8, padding: "10px 10px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", alignItems: "center" }}>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{snap.month}</span>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#34d399" }}>${snap.revenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>${snap.expenses.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>${((snap.contractors ?? 0)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: netColor }}>{snap.net >= 0 ? "+" : ""}${snap.net.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <button onClick={() => deleteSnapshot(snap.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
                     <Trash2 size={12} />
                   </button>
                 </div>
