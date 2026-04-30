@@ -6,7 +6,7 @@ import type { KnowledgeItem, KnowledgeCategory } from "@/lib/types";
 import {
   Lock, Key, Globe, CreditCard, User, FileText,
   Eye, EyeOff, Trash2, Edit3, Check, X, Plus,
-  Upload, Loader2,
+  Upload, Loader2, Download,
 } from "lucide-react";
 
 const CATEGORY_CONFIG: Record<KnowledgeCategory, { label: string; color: string; icon: React.ReactNode }> = {
@@ -30,9 +30,10 @@ interface ExtractedPreviewItem {
 
 interface Props {
   projectId: string;
+  projectName?: string;
 }
 
-export function KnowledgeTab({ projectId }: Props) {
+export function KnowledgeTab({ projectId, projectName }: Props) {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -164,6 +165,27 @@ export function KnowledgeTab({ projectId }: Props) {
     setPreview(null);
     setSaving(false);
     fetchItems();
+  };
+
+  const exportCsv = () => {
+    const rows = ["Category,Label,Value,Purpose"];
+    for (const cat of CATEGORY_ORDER) {
+      for (const item of items.filter((i) => i.category === cat)) {
+        rows.push([
+          CATEGORY_CONFIG[cat].label,
+          `"${item.label.replace(/"/g, '""')}"`,
+          `"${item.value.replace(/"/g, '""')}"`,
+          `"${(item.notes ?? "").replace(/"/g, '""')}"`,
+        ].join(","));
+      }
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(projectName ?? "project").replace(/\s+/g, "-").toLowerCase()}-vault.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const grouped = CATEGORY_ORDER.reduce<Record<KnowledgeCategory, KnowledgeItem[]>>(
@@ -321,8 +343,13 @@ export function KnowledgeTab({ projectId }: Props) {
         </div>
       )}
 
-      {/* Manual add */}
-      <div className="flex justify-end">
+      {/* Manual add + export */}
+      <div className="flex justify-end gap-2">
+        {items.length > 0 && (
+          <button className="btn-ghost" onClick={exportCsv} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
+            <Download size={12} /> Export CSV
+          </button>
+        )}
         <button className="btn-ghost" onClick={() => setAdding(true)} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
           <Plus size={13} /> Add Manually
         </button>

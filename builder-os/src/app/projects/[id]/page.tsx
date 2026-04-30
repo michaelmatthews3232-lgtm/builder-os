@@ -349,7 +349,7 @@ export default function ProjectDetailPage() {
 
         {/* Vault Tab */}
         {activeTab === "vault" && (
-          <KnowledgeTab projectId={id} />
+          <KnowledgeTab projectId={id} projectName={project.name} />
         )}
       </div>
 

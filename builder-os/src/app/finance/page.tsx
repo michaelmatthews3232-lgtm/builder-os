@@ -10,7 +10,7 @@ import {
   Building2, Edit3, Check, X, Plus, Trash2,
   TrendingUp, TrendingDown, DollarSign, AlertTriangle,
   Globe, Cpu, CreditCard, Package, Users, HelpCircle,
-  Eye, EyeOff,
+  Eye, EyeOff, RefreshCw, Loader2, Download,
 } from "lucide-react";
 
 // ── Config ────────────────────────────────────────────────
@@ -86,6 +86,15 @@ export default function FinancePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [stripeData, setStripeData] = useState<{
+    mrr: number;
+    active_subscriptions: number;
+    total_customers: number | null;
+    products: { id: string; name: string; mrr: number; subscriptions: number }[];
+  } | null>(null);
+  const [stripeFetching, setStripeFetching] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+
   const [addingExpense, setAddingExpense] = useState(false);
   const [expForm, setExpForm] = useState<{
     name: string; amount: string; category: ExpenseCategory;
@@ -105,6 +114,25 @@ export default function FinancePage() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // ── Stripe sync ───────────────────────────────────────
+  const syncStripe = async () => {
+    setStripeFetching(true);
+    setStripeError(null);
+    try {
+      const res = await fetch("/api/integrations/stripe");
+      if (!res.ok) {
+        const { error } = await res.json();
+        setStripeError(error ?? "Failed to sync");
+      } else {
+        const data = await res.json();
+        setStripeData(data);
+      }
+    } catch {
+      setStripeError("Network error");
+    }
+    setStripeFetching(false);
+  };
 
   // ── LLC profile save ──────────────────────────────────
   const saveLlc = async () => {
@@ -173,15 +201,61 @@ export default function FinancePage() {
     return acc;
   }, {} as Record<ExpenseCategory, Expense[]>);
 
+  const exportTaxCsv = () => {
+    const year = new Date().getFullYear();
+    const rows: string[] = [
+      "Type,Name,Category,Amount,Billing Cycle,Monthly Equivalent,Project,Notes,Added",
+    ];
+    for (const exp of expenses) {
+      const proj = projects.find((p) => p.id === exp.project_id)?.name ?? "";
+      const monthly = monthlyEquivalent(exp.amount, exp.billing_cycle);
+      rows.push([
+        "Expense",
+        `"${exp.name.replace(/"/g, '""')}"`,
+        CATEGORY_CONFIG[exp.category].label,
+        exp.amount.toFixed(2),
+        BILLING_LABELS[exp.billing_cycle],
+        monthly.toFixed(2),
+        `"${proj}"`,
+        `"${(exp.notes ?? "").replace(/"/g, '""')}"`,
+        exp.created_at ? new Date(exp.created_at).toLocaleDateString() : "",
+      ].join(","));
+    }
+    rows.push("");
+    rows.push("Type,Project,Monthly Revenue");
+    for (const p of projects) {
+      if (p.revenue_monthly > 0) {
+        rows.push(["Revenue", `"${p.name.replace(/"/g, '""')}"`, p.revenue_monthly.toFixed(2)].join(","));
+      }
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `builder-os-finances-${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) return <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading...</div>;
 
   return (
     <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
 
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>Finance</h1>
-        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>LLC profile, expenses, and revenue overview</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>Finance</h1>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>LLC profile, expenses, and revenue overview</p>
+        </div>
+        <button
+          className="btn-ghost"
+          onClick={exportTaxCsv}
+          style={{ fontSize: 12, padding: "7px 14px", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}
+        >
+          <Download size={12} />
+          Export Tax CSV
+        </button>
       </div>
 
       {/* Summary stats */}
@@ -206,6 +280,78 @@ export default function FinancePage() {
             <div className="font-mono" style={{ fontSize: 26, fontWeight: 700, color }}>{value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Stripe Revenue Sync */}
+      <div className="card" style={{ padding: "18px 20px" }}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <CreditCard size={14} style={{ color: "#635bff" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Stripe Revenue</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— live MRR sync</span>
+          </div>
+          <button
+            className="btn-ghost"
+            onClick={syncStripe}
+            disabled={stripeFetching}
+            style={{ fontSize: 12, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}
+          >
+            {stripeFetching
+              ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+              : <RefreshCw size={11} />}
+            {stripeFetching ? "Syncing..." : stripeData ? "Refresh" : "Sync from Stripe"}
+          </button>
+        </div>
+
+        {stripeError && (
+          <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>
+            {stripeError === "Stripe integration not configured"
+              ? "Connect your Stripe secret key in Integrations first."
+              : stripeError}
+          </p>
+        )}
+
+        {stripeData && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+              {[
+                { label: "MRR", value: `$${stripeData.mrr.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#635bff" },
+                { label: "Active Subscriptions", value: stripeData.active_subscriptions.toString(), color: "var(--text-primary)" },
+                { label: "Total Customers", value: stripeData.total_customers != null ? stripeData.total_customers.toString() : "—", color: "var(--text-primary)" },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "12px 14px", border: "1px solid var(--border)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+                  <div className="font-mono" style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {stripeData.products.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)", marginBottom: 2 }}>By Product</div>
+                {stripeData.products.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between" style={{ fontSize: 12, padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    <span style={{ color: "var(--text-secondary)" }}>{p.name}</span>
+                    <div className="flex items-center gap-4">
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.subscriptions} sub{p.subscriptions !== 1 ? "s" : ""}</span>
+                      <span className="font-mono" style={{ color: "#635bff", fontWeight: 600 }}>${p.mrr.toFixed(2)}/mo</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {stripeData.products.length === 0 && (
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>No active subscriptions yet.</p>
+            )}
+          </div>
+        )}
+
+        {!stripeData && !stripeError && (
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+            Click Sync to pull live MRR and subscription data from Stripe.
+          </p>
+        )}
       </div>
 
       {/* Insights */}

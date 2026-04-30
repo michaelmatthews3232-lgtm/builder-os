@@ -58,7 +58,6 @@ const INTEGRATION_META: Record<string, {
     tokenLabel: "Secret Key",
     tokenPlaceholder: "sk_live_...",
     docsUrl: "https://dashboard.stripe.com/apikeys",
-    comingSoon: true,
   },
   expo: {
     icon: <Package size={18} />,
@@ -125,6 +124,8 @@ export default function IntegrationsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectName: "" }),
         });
+      } else if (service === "stripe") {
+        res = await fetch("/api/integrations/stripe");
       } else {
         setTestResults((prev) => ({ ...prev, [service]: "fail" }));
         return;
