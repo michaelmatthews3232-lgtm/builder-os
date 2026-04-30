@@ -98,12 +98,13 @@ export default function PlanPage() {
         ).length,
       }));
 
-      const taskList = (tasks ?? []).map((t: { title: string; priority: string; status: string; projects?: { name: string } | null }) => ({
-        title: t.title,
-        priority: t.priority,
-        status: t.status,
-        project: (t.projects as { name: string } | null)?.name ?? "Unknown",
-      }));
+      const taskList = (tasks ?? []).map((t) => {
+        const proj = t.projects;
+        const projectName = Array.isArray(proj)
+          ? (proj[0] as { name: string } | undefined)?.name ?? "Unknown"
+          : (proj as { name: string } | null)?.name ?? "Unknown";
+        return { title: t.title, priority: t.priority, status: t.status, project: projectName };
+      });
 
       const shortTermGoals = goals.filter((g) => g.type === "short_term").map((g) => g.title);
       const longTermGoals = goals.filter((g) => g.type === "long_term").map((g) => g.title);
