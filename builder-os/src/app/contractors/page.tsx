@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import type { Contractor } from "@/lib/types";
-import { Users, DollarSign, ArrowRight, ExternalLink } from "lucide-react";
+import { Users, DollarSign, ArrowRight, ExternalLink, BookUser } from "lucide-react";
 
 interface ContractorWithProject extends Contractor {
   project?: { id: string; name: string };
@@ -48,10 +48,12 @@ export default function ContractorsPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const filtered = filterStatus === "all" ? contractors : contractors.filter((c) => c.status === filterStatus);
+  const assigned = contractors.filter((c) => c.project_id != null);
+  const library = contractors.filter((c) => c.project_id == null);
+  const filtered = (filterStatus === "all" ? assigned : assigned.filter((c) => c.status === filterStatus));
 
   const totalPaid = contractors.reduce((s, c) => s + (c.total_paid ?? 0), 0);
-  const activeCount = contractors.filter((c) => c.status === "active").length;
+  const activeCount = assigned.filter((c) => c.status === "active").length;
 
   return (
     <div className="page-enter" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
@@ -189,6 +191,53 @@ export default function ContractorsPage() {
           View projects <ExternalLink size={10} style={{ display: "inline" }} />
         </Link>
       </p>
+
+      {/* Library: unassigned contractors */}
+      {library.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <BookUser size={14} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Contractor Library</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— saved, not on any active project</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {library.map((c) => {
+              const sc = STATUS_COLOR[c.status] ?? STATUS_COLOR.inactive;
+              return (
+                <div key={c.id} className="card" style={{ padding: "14px 18px", opacity: 0.75 }}>
+                  <div className="flex items-center gap-4">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{c.name}</span>
+                        {c.role && <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{c.role}</span>}
+                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", padding: "2px 7px", borderRadius: 99, color: sc.color, background: sc.bg, fontFamily: "JetBrains Mono, monospace" }}>
+                          {c.status}
+                        </span>
+                        <span style={{ fontSize: 9, color: "var(--accent)", background: "var(--accent-dim)", padding: "2px 7px", borderRadius: 99, fontWeight: 700, fontFamily: "JetBrains Mono, monospace", textTransform: "uppercase" }}>
+                          LIBRARY
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 flex-wrap">
+                        {c.email && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{c.email}</span>}
+                        {c.platform && <span style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 7px", borderRadius: 4 }}>{c.platform}</span>}
+                        {c.hourly_rate != null && <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>${c.hourly_rate}/hr</span>}
+                        {(c.total_paid ?? 0) > 0 && (
+                          <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171", display: "flex", alignItems: "center", gap: 3 }}>
+                            <DollarSign size={10} />{(c.total_paid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} paid historically
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Link href="/projects" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", background: "var(--accent-dim)", border: "1px solid var(--border-accent)", padding: "6px 12px", borderRadius: 7, fontWeight: 600, flexShrink: 0, whiteSpace: "nowrap" }}>
+                      Assign to Project →
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

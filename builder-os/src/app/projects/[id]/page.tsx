@@ -32,6 +32,8 @@ import {
   Sparkles,
   Share2,
   Globe2,
+  UserMinus,
+  BookUser,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -790,6 +792,9 @@ function ContractorsTab({
   const emptyForm = { name: "", role: "", platform: "", hourly_rate: "", email: "", status: "active" };
   const [form, setForm] = useState(emptyForm);
   const [adding, setAdding] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryContractors, setLibraryContractors] = useState<Contractor[]>([]);
+  const [librarySearch, setLibrarySearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [activeSubTab, setActiveSubTab] = useState<Record<string, "notes" | "payments">>({});
@@ -850,7 +855,28 @@ function ContractorsTab({
     onUpdate();
   };
 
-  const remove = async (id: string) => {
+  const fetchLibrary = async () => {
+    const { data } = await supabase.from("contractors").select("*").is("project_id", null).order("name");
+    setLibraryContractors((data as Contractor[]) ?? []);
+  };
+
+  const assignFromLibrary = async (contractorId: string) => {
+    await supabase.from("contractors").update({ project_id: projectId, status: "active" }).eq("id", contractorId);
+    setShowLibrary(false);
+    setLibraryContractors([]);
+    onUpdate();
+  };
+
+  const unassign = async (id: string) => {
+    await supabase.from("contractors").update({ project_id: null }).eq("id", id);
+    onUpdate();
+  };
+
+  const deleteFromSystem = async (id: string) => {
+    await Promise.all([
+      supabase.from("contractor_updates").delete().eq("contractor_id", id),
+      supabase.from("contractor_payments").delete().eq("contractor_id", id),
+    ]);
     await supabase.from("contractors").delete().eq("id", id);
     onUpdate();
   };
@@ -898,12 +924,65 @@ function ContractorsTab({
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex items-center justify-between mb-4">
+        <button
+          className="btn-ghost"
+          onClick={() => { setShowLibrary((v) => !v); if (!showLibrary) fetchLibrary(); }}
+          style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+        >
+          <BookUser size={13} />
+          {showLibrary ? "Hide Library" : "Assign from Library"}
+        </button>
         <button className="btn-primary" onClick={() => setAdding(true)}>
           <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
-          Add Contractor
+          Add New Contractor
         </button>
       </div>
+
+      {/* Library picker */}
+      {showLibrary && (
+        <div className="card" style={{ padding: 16, marginBottom: 16, borderColor: "rgba(99,102,241,0.25)", background: "rgba(99,102,241,0.04)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <BookUser size={13} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Contractor Library</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— saved contractors not on any project</span>
+          </div>
+          <input
+            className="input-base"
+            placeholder="Search library..."
+            value={librarySearch}
+            onChange={(e) => setLibrarySearch(e.target.value)}
+            style={{ marginBottom: 10, fontSize: 12 }}
+          />
+          {libraryContractors.length === 0 ? (
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+              No saved contractors in library. Contractors you unassign from projects will appear here.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {libraryContractors
+                .filter((c) => !librarySearch || c.name.toLowerCase().includes(librarySearch.toLowerCase()) || (c.role ?? "").toLowerCase().includes(librarySearch.toLowerCase()))
+                .map((c) => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{c.name}</span>
+                      {c.role && <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 8 }}>{c.role}</span>}
+                      {c.platform && <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4, marginLeft: 6 }}>{c.platform}</span>}
+                      {c.hourly_rate != null && <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>${c.hourly_rate}/hr</span>}
+                    </div>
+                    <button
+                      className="btn-primary"
+                      style={{ fontSize: 11, padding: "5px 12px" }}
+                      onClick={() => assignFromLibrary(c.id)}
+                    >
+                      Assign to Project
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {adding && (
         <div className="card" style={{ padding: 18, marginBottom: 16 }}>
@@ -999,8 +1078,12 @@ function ContractorsTab({
                       <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, fontFamily: "JetBrains Mono, monospace", textTransform: "uppercase", background: sc.bg, color: sc.color }}>
                         {c.status}
                       </span>
-                      <button onClick={() => remove(c.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                        <Trash2 size={13} />
+                      <button
+                        onClick={() => unassign(c.id)}
+                        title="Unassign from project (keeps in library)"
+                        style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}
+                      >
+                        <UserMinus size={13} />
                       </button>
                     </div>
                   </div>
@@ -1030,6 +1113,15 @@ function ContractorsTab({
                     </div>
 
                     <div style={{ padding: "14px 16px" }}>
+                      <div className="flex justify-end mb-3">
+                        <button
+                          onClick={() => deleteFromSystem(c.id)}
+                          style={{ fontSize: 10, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 5, cursor: "pointer", padding: "3px 8px", display: "flex", alignItems: "center", gap: 4 }}
+                          title="Permanently delete this contractor from the system"
+                        >
+                          <Trash2 size={10} /> Delete from system
+                        </button>
+                      </div>
                       {subTab === "notes" && (
                         <>
                           <div className="flex items-center justify-between mb-3">
