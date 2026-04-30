@@ -331,9 +331,9 @@ export default function IntegrationsPage() {
                 <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>No recent builds found.</p>
               ) : expoData.recent_builds.map((build) => {
                 const statusColor =
-                  build.status === "finished" ? "#34d399"
-                  : build.status === "errored" ? "#f87171"
-                  : build.status === "in-progress" ? "#fbbf24"
+                  build.status === "FINISHED" ? "#34d399"
+                  : build.status === "ERRORED" || build.status === "CANCELED" ? "#f87171"
+                  : build.status === "IN_PROGRESS" || build.status === "IN_QUEUE" ? "#fbbf24"
                   : "var(--text-muted)";
                 return (
                   <div key={build.id} className="flex items-center gap-3" style={{ padding: "7px 10px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", fontSize: 12 }}>

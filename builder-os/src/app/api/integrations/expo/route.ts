@@ -6,6 +6,20 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const EXPO_GQL = "https://api.expo.dev/graphql";
+
+async function gql(token: string, query: string, variables?: Record<string, unknown>) {
+  const res = await fetch(EXPO_GQL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  return res.json();
+}
+
 export async function GET() {
   try {
     const { data: setting } = await supabase
@@ -18,67 +32,96 @@ export async function GET() {
       return NextResponse.json({ error: "Expo integration not configured" }, { status: 400 });
     }
 
-    const headers = {
-      Authorization: `Bearer ${setting.token}`,
-      "Content-Type": "application/json",
-    };
+    const token = setting.token as string;
 
-    // Fetch account info
-    const meRes = await fetch("https://api.expo.dev/v2/auth/userInfo", { headers });
-    if (!meRes.ok) {
-      const err = await meRes.json();
-      return NextResponse.json({ error: err.errors?.[0]?.message ?? "Expo API error" }, { status: meRes.status });
+    // Fetch account + recent builds via GraphQL
+    const result = await gql(token, `
+      query BuilderOSBuilds {
+        me {
+          username
+          primaryEmail
+          accounts {
+            name
+            builds(limit: 15, filter: {}) {
+              edges {
+                node {
+                  id
+                  status
+                  platform
+                  appVersion
+                  buildProfile
+                  createdAt
+                  completedAt
+                  app {
+                    name
+                    slug
+                  }
+                  error {
+                    errorCode
+                    title
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `);
+
+    if (result.errors) {
+      const msg = result.errors[0]?.message ?? "Expo GraphQL error";
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
-    const meData = await meRes.json();
-    const username = meData.data?.username ?? meData.data?.primaryEmail ?? "unknown";
 
-    // Fetch apps
-    const appsRes = await fetch(`https://api.expo.dev/v2/projects?limit=20`, { headers });
-    const appsData = appsRes.ok ? await appsRes.json() : null;
-    const apps = appsData?.data ?? [];
+    const me = result.data?.me;
+    if (!me) {
+      return NextResponse.json({ error: "Could not fetch Expo account info" }, { status: 400 });
+    }
 
-    // Fetch recent builds across all apps
-    const buildsRes = await fetch(
-      `https://api.expo.dev/v2/builds?limit=10&status=in-queue,in-progress,finished,errored`,
-      { headers }
-    );
-    const buildsData = buildsRes.ok ? await buildsRes.json() : null;
-    const builds = buildsData?.data ?? [];
+    const username = me.username ?? me.primaryEmail ?? "unknown";
+    const accounts = me.accounts ?? [];
 
-    const activeBuilds = builds.filter((b: { status: string }) =>
-      b.status === "in-queue" || b.status === "in-progress"
-    );
+    // Flatten builds across all accounts
+    const allBuilds: {
+      id: string;
+      status: string;
+      platform: string;
+      app_version?: string;
+      build_profile?: string;
+      created_at: string;
+      completed_at?: string;
+      project_name: string;
+      error_message?: string;
+    }[] = [];
+
+    for (const account of accounts) {
+      const edges = account.builds?.edges ?? [];
+      for (const { node: b } of edges) {
+        allBuilds.push({
+          id: b.id,
+          status: b.status,
+          platform: b.platform,
+          app_version: b.appVersion,
+          build_profile: b.buildProfile,
+          created_at: b.createdAt,
+          completed_at: b.completedAt ?? undefined,
+          project_name: b.app?.name ?? b.app?.slug ?? "Unknown",
+          error_message: b.error?.title ?? undefined,
+        });
+      }
+    }
+
+    // Sort by newest first
+    allBuilds.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const activeBuilds = allBuilds.filter(
+      (b) => b.status === "IN_QUEUE" || b.status === "IN_PROGRESS"
+    ).length;
 
     return NextResponse.json({
       account: username,
-      apps: apps.map((a: { id: string; name: string; slug: string; platform: string }) => ({
-        id: a.id,
-        name: a.name,
-        slug: a.slug,
-        platform: a.platform,
-      })),
-      recent_builds: builds.slice(0, 10).map((b: {
-        id: string;
-        status: string;
-        platform: string;
-        appVersion?: string;
-        buildProfile?: string;
-        createdAt: string;
-        completedAt?: string;
-        project?: { name: string; slug: string };
-        error?: { message: string };
-      }) => ({
-        id: b.id,
-        status: b.status,
-        platform: b.platform,
-        app_version: b.appVersion,
-        build_profile: b.buildProfile,
-        created_at: b.createdAt,
-        completed_at: b.completedAt,
-        project_name: b.project?.name ?? b.project?.slug ?? "Unknown",
-        error_message: b.error?.message,
-      })),
-      active_builds: activeBuilds.length,
+      recent_builds: allBuilds.slice(0, 10),
+      active_builds: activeBuilds,
     });
   } catch (err) {
     console.error("Expo integration error:", err);
