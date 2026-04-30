@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -34,6 +34,7 @@ import {
   Globe2,
   UserMinus,
   BookUser,
+  Upload,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -1322,6 +1323,60 @@ function ContractorsTab({
 
 // ── Sales Tab ─────────────────────────────────────────────────────────────────
 
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuotes = !inQuotes; }
+    else if (ch === "," && !inQuotes) { result.push(current.trim()); current = ""; }
+    else { current += ch; }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+type ParsedLead = { contact_name: string; contact_info: string; source: string; notes: string };
+
+function parseCSV(text: string): ParsedLead[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().replace(/^"|"$/g, "").trim());
+
+  const col = (row: string[], ...names: string[]) => {
+    for (const name of names) {
+      const idx = headers.findIndex((h) => h === name || h.includes(name));
+      if (idx >= 0) return (row[idx] ?? "").replace(/^"|"$/g, "").trim();
+    }
+    return "";
+  };
+
+  const firstLast = (row: string[]) => {
+    const first = col(row, "first_name", "first");
+    const last = col(row, "last_name", "last");
+    if (first || last) return [first, last].filter(Boolean).join(" ");
+    return "";
+  };
+
+  return lines
+    .slice(1)
+    .filter((l) => l.trim())
+    .map((line) => {
+      const row = parseCSVLine(line);
+      const name =
+        col(row, "name", "contact_name", "full_name", "business_name", "company") ||
+        firstLast(row);
+      const contact =
+        col(row, "email", "email_address", "contact_info", "contact", "phone", "phone_number", "mobile");
+      const source = col(row, "source", "channel", "referral", "how_found");
+      const notes = col(row, "notes", "note", "description", "comments", "comment");
+      return { contact_name: name, contact_info: contact, source, notes };
+    })
+    .filter((r) => r.contact_name || r.contact_info);
+}
+
 const SALES_STATUSES: SalesLeadStatus[] = ["lead", "contacted", "responded", "converted", "lost"];
 
 const SALES_STATUS_CONFIG: Record<SalesLeadStatus, { color: string; bg: string }> = {
@@ -1340,6 +1395,9 @@ function SalesTab({ projectId }: { projectId: string }) {
   const [form, setForm] = useState({ contact_name: "", contact_info: "", source: "", notes: "", status: "lead" as SalesLeadStatus });
   const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState<SalesLeadStatus | "all">("all");
+  const [importPreview, setImportPreview] = useState<ParsedLead[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchLeads = async () => {
     const { data } = await supabase.from("project_sales").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
@@ -1383,6 +1441,37 @@ function SalesTab({ projectId }: { projectId: string }) {
     fetchLeads();
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setImportPreview(parseCSV(text));
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview.length) return;
+    setImporting(true);
+    await supabase.from("project_sales").insert(
+      importPreview.map((r) => ({
+        project_id: projectId,
+        contact_name: r.contact_name || null,
+        contact_info: r.contact_info || null,
+        source: r.source || null,
+        notes: r.notes || null,
+        status: "lead" as SalesLeadStatus,
+        milestone_goal: milestoneGoal.trim() || null,
+      }))
+    );
+    setImportPreview([]);
+    setImporting(false);
+    fetchLeads();
+  };
+
   const filtered = filterStatus === "all" ? leads : leads.filter((l) => l.status === filterStatus);
   const converted = leads.filter((l) => l.status === "converted").length;
 
@@ -1421,6 +1510,14 @@ function SalesTab({ projectId }: { projectId: string }) {
         </div>
       </div>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        style={{ display: "none" }}
+        onChange={handleFileSelect}
+      />
+
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           {(["all", ...SALES_STATUSES] as const).map((s) => (
@@ -1438,11 +1535,84 @@ function SalesTab({ projectId }: { projectId: string }) {
             </button>
           ))}
         </div>
-        <button className="btn-primary" onClick={() => setAdding(true)}>
-          <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
-          Add Lead
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn-ghost"
+            onClick={() => fileInputRef.current?.click()}
+            style={{ fontSize: 12 }}
+          >
+            <Upload size={13} style={{ display: "inline", marginRight: 6 }} />
+            Import CSV
+          </button>
+          <button className="btn-primary" onClick={() => setAdding(true)}>
+            <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
+            Add Lead
+          </button>
+        </div>
       </div>
+
+      {/* CSV import preview */}
+      {importPreview.length > 0 && (
+        <div
+          className="card"
+          style={{ padding: 18, marginBottom: 16, borderColor: "rgba(99,102,241,0.3)", background: "rgba(99,102,241,0.04)" }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                {importPreview.length} leads ready to import
+              </span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>
+                all set to &quot;lead&quot; status
+              </span>
+            </div>
+            <button
+              onClick={() => setImportPreview([])}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Preview rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
+            {importPreview.slice(0, 5).map((r, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 8,
+                  padding: "7px 10px",
+                  background: "rgba(255,255,255,0.03)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{r.contact_name || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{r.contact_info || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                <span style={{ color: "var(--text-muted)" }}>{r.source || r.notes || "—"}</span>
+              </div>
+            ))}
+            {importPreview.length > 5 && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 10px" }}>
+                + {importPreview.length - 5} more
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-primary"
+              onClick={confirmImport}
+              disabled={importing}
+            >
+              {importing ? "Importing..." : `Import ${importPreview.length} Leads`}
+            </button>
+            <button className="btn-ghost" onClick={() => setImportPreview([])}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {adding && (
         <div className="card" style={{ padding: 18, marginBottom: 16 }}>
