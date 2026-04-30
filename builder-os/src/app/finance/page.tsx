@@ -633,6 +633,92 @@ export default function FinancePage() {
         </div>
       </div>
 
+      {/* Per-Project Expense Breakdown */}
+      {expenses.length > 0 && (
+        <div className="card" style={{ padding: "20px 22px" }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Package size={14} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Expenses by Project</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* General / unassigned */}
+            {(() => {
+              const general = expenses.filter((e) => !e.project_id && e.active);
+              const generalTotal = general.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
+              const byCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<string, Expense[]>>((acc, cat) => {
+                const catExp = general.filter((e) => e.category === cat);
+                if (catExp.length) acc[cat] = catExp;
+                return acc;
+              }, {});
+              if (!general.length) return null;
+              return (
+                <div style={{ borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" }}>
+                  <div className="flex items-center justify-between" style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>General / Shared</span>
+                    <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>${generalTotal.toFixed(2)}/mo</span>
+                  </div>
+                  <div style={{ padding: "8px 14px 10px", display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {Object.entries(byCategory).map(([cat, exps]) => {
+                      const cfg = CATEGORY_CONFIG[cat as ExpenseCategory];
+                      const catTotal = exps.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
+                      return (
+                        <span key={cat} style={{ fontSize: 11, color: cfg.color, background: `${cfg.color}18`, border: `1px solid ${cfg.color}30`, padding: "2px 8px", borderRadius: 99, display: "flex", alignItems: "center", gap: 4 }}>
+                          {cfg.icon} {cfg.label} ${catTotal.toFixed(0)}/mo
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Per project */}
+            {projects.map((proj) => {
+              const projExp = expenses.filter((e) => e.project_id === proj.id && e.active);
+              if (!projExp.length) return null;
+              const projTotal = projExp.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
+              const oneTime = expenses.filter((e) => e.project_id === proj.id && e.billing_cycle === "one_time").reduce((s, e) => s + e.amount, 0);
+              const byCategory = Object.keys(CATEGORY_CONFIG).reduce<Record<string, Expense[]>>((acc, cat) => {
+                const catExp = projExp.filter((e) => e.category === cat);
+                if (catExp.length) acc[cat] = catExp;
+                return acc;
+              }, {});
+              return (
+                <div key={proj.id} style={{ borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" }}>
+                  <div className="flex items-center justify-between" style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)" }}>
+                    <div className="flex items-center gap-3">
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{proj.name}</span>
+                      {proj.revenue_monthly > 0 && (
+                        <span className="font-mono" style={{ fontSize: 10, color: "#34d399" }}>${proj.revenue_monthly}/mo revenue</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {oneTime > 0 && (
+                        <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>${oneTime.toFixed(0)} invested</span>
+                      )}
+                      {projTotal > 0 && (
+                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#f87171" }}>${projTotal.toFixed(2)}/mo</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ padding: "8px 14px 10px", display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {Object.entries(byCategory).map(([cat, exps]) => {
+                      const cfg = CATEGORY_CONFIG[cat as ExpenseCategory];
+                      const catTotal = exps.reduce((s, e) => s + monthlyEquivalent(e.amount, e.billing_cycle), 0);
+                      const names = exps.map((e) => e.name).join(", ");
+                      return (
+                        <span key={cat} title={names} style={{ fontSize: 11, color: cfg.color, background: `${cfg.color}18`, border: `1px solid ${cfg.color}30`, padding: "2px 8px", borderRadius: 99, display: "flex", alignItems: "center", gap: 4, cursor: "default" }}>
+                          {cfg.icon} {cfg.label}{catTotal > 0 ? ` $${catTotal.toFixed(0)}/mo` : ""}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Expense Tracker */}
       <div>
         <div className="flex items-center justify-between mb-4">

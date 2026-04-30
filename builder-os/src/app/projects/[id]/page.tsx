@@ -57,6 +57,7 @@ export default function ProjectDetailPage() {
   const [oneTimeTotal, setOneTimeTotal] = useState(0);
   const [generatingMarketing, setGeneratingMarketing] = useState(false);
   const [marketingPlan, setMarketingPlan] = useState<Record<string, unknown> | null>(null);
+  const [marketingError, setMarketingError] = useState<string | null>(null);
 
   const fetchData = async () => {
     const [{ data: proj }, { data: taskData }, { data: contractorData }, { data: expData }] =
@@ -182,15 +183,22 @@ export default function ProjectDetailPage() {
   const generateMarketingPlan = async () => {
     if (!project) return;
     setGeneratingMarketing(true);
+    setMarketingError(null);
     try {
       const res = await fetch("/api/generate-marketing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName: project.name, description: project.description, status: project.status }),
       });
-      const { plan } = await res.json();
-      if (plan) setMarketingPlan(plan);
-    } catch { /* silently fail */ }
+      const body = await res.json();
+      if (body.plan) {
+        setMarketingPlan(body.plan);
+      } else {
+        setMarketingError(body.error ?? "Generation failed — try again");
+      }
+    } catch {
+      setMarketingError("Network error — check your connection");
+    }
     setGeneratingMarketing(false);
   };
 
@@ -571,8 +579,9 @@ export default function ProjectDetailPage() {
             project={project}
             plan={marketingPlan}
             generating={generatingMarketing}
+            error={marketingError}
             onGenerate={generateMarketingPlan}
-            onClear={() => setMarketingPlan(null)}
+            onClear={() => { setMarketingPlan(null); setMarketingError(null); }}
           />
         )}
 
@@ -1535,12 +1544,14 @@ function MarketingTab({
   project,
   plan,
   generating,
+  error,
   onGenerate,
   onClear,
 }: {
   project: Project;
   plan: Record<string, unknown> | null;
   generating: boolean;
+  error: string | null;
   onGenerate: () => void;
   onClear: () => void;
 }) {
@@ -1554,6 +1565,11 @@ function MarketingTab({
             Claude will create a tailored marketing plan for <strong style={{ color: "var(--text-secondary)" }}>{project.name}</strong> — channels, 30-day plan, content ideas, and KPIs.
           </p>
         </div>
+        {error && (
+          <p style={{ fontSize: 12, color: "#f87171", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 7, padding: "8px 14px" }}>
+            {error}
+          </p>
+        )}
         <button
           className="btn-primary"
           onClick={onGenerate}
@@ -1562,7 +1578,7 @@ function MarketingTab({
         >
           {generating
             ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Generating...</>
-            : <><Sparkles size={14} /> Generate Plan</>}
+            : <><Sparkles size={14} /> {error ? "Try Again" : "Generate Plan"}</>}
         </button>
       </div>
     );

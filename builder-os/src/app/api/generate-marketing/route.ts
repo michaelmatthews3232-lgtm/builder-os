@@ -26,12 +26,14 @@ Be specific to this project, not generic. Focus on what actually works for indie
   try {
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1200,
+      max_tokens: 2500,
       messages: [{ role: "user", content: prompt }],
     });
 
     const text = (message.content[0] as { type: string; text: string }).text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Strip markdown code fences if present, then extract JSON object
+    const stripped = text.replace(/```(?:json)?\n?/g, "").trim();
+    const jsonMatch = stripped.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return NextResponse.json({ error: "No JSON in response" }, { status: 500 });
 
     const plan = JSON.parse(jsonMatch[0]);

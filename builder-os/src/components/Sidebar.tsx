@@ -14,6 +14,7 @@ import {
   Plug,
   LogOut,
   Users,
+  KeyRound,
 } from "lucide-react";
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/today", label: "Today", icon: Zap },
   { href: "/plan", label: "Game Plan", icon: Sparkles },
   { href: "/finance", label: "Finance", icon: DollarSign },
+  { href: "/accounts", label: "Accounts", icon: KeyRound },
   { href: "/contractors", label: "Contractors", icon: Users },
   { href: "/integrations", label: "Integrations", icon: Plug },
 ];
