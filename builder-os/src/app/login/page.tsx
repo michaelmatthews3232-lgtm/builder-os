@@ -17,18 +17,29 @@ function LoginForm() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
 
-    if (res.ok) {
-      const from = searchParams.get("from") ?? "/";
-      router.push(from);
-      router.refresh();
-    } else {
-      setError("Incorrect password");
+      if (res.ok) {
+        const from = searchParams.get("from");
+        const target = from && !from.startsWith("/login") ? from : "/";
+        router.push(target);
+        router.refresh();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 500) {
+          setError(body.error ?? "Server error — check Vercel env vars (AUTH_PASSWORD, AUTH_SECRET)");
+        } else {
+          setError("Incorrect password");
+        }
+        setLoading(false);
+      }
+    } catch {
+      setError("Network error — please try again");
       setLoading(false);
     }
   };
