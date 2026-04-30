@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Github, Globe, Zap, CreditCard, Package,
-  Check, X, Loader2, RefreshCw, Lock, Edit3,
+  Check, X, Loader2, RefreshCw, Lock, Edit3, AlertCircle,
 } from "lucide-react";
 
 interface IntegrationStatus {
@@ -67,7 +67,6 @@ const INTEGRATION_META: Record<string, {
     tokenLabel: "Access Token",
     tokenPlaceholder: "expo_...",
     docsUrl: "https://expo.dev/accounts/[account]/settings/access-tokens",
-    comingSoon: true,
   },
 };
 
@@ -78,6 +77,14 @@ export default function IntegrationsPage() {
   const [tokenInput, setTokenInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, "ok" | "fail" | "testing">>({});
+  const [expoData, setExpoData] = useState<{
+    account: string;
+    active_builds: number;
+    apps: { id: string; name: string; slug: string }[];
+    recent_builds: { id: string; status: string; platform: string; project_name: string; created_at: string; completed_at?: string; error_message?: string }[];
+  } | null>(null);
+  const [expoLoading, setExpoLoading] = useState(false);
+  const [expoError, setExpoError] = useState<string | null>(null);
 
   const fetchStatuses = async () => {
     const res = await fetch("/api/integrations/list");
@@ -126,6 +133,8 @@ export default function IntegrationsPage() {
         });
       } else if (service === "stripe") {
         res = await fetch("/api/integrations/stripe");
+      } else if (service === "expo") {
+        res = await fetch("/api/integrations/expo");
       } else {
         setTestResults((prev) => ({ ...prev, [service]: "fail" }));
         return;
@@ -134,6 +143,23 @@ export default function IntegrationsPage() {
     } catch {
       setTestResults((prev) => ({ ...prev, [service]: "fail" }));
     }
+  };
+
+  const fetchExpoBuilds = async () => {
+    setExpoLoading(true);
+    setExpoError(null);
+    try {
+      const res = await fetch("/api/integrations/expo");
+      if (!res.ok) {
+        const { error } = await res.json();
+        setExpoError(error ?? "Failed to fetch");
+      } else {
+        setExpoData(await res.json());
+      }
+    } catch {
+      setExpoError("Network error");
+    }
+    setExpoLoading(false);
   };
 
   const connectedServices = new Set(statuses.filter((s) => s.enabled).map((s) => s.service));
@@ -255,6 +281,76 @@ export default function IntegrationsPage() {
           );
         })}
       </div>
+
+      {/* Expo Build Dashboard */}
+      {connectedServices.has("expo") && (
+        <div className="card" style={{ padding: "20px 22px" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Package size={14} style={{ color: "#4630eb" }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Expo EAS Builds</span>
+              {expoData && (
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— {expoData.account}</span>
+              )}
+              {(expoData?.active_builds ?? 0) > 0 && (
+                <span style={{ fontSize: 10, color: "#fbbf24", background: "rgba(251,191,36,0.1)", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>
+                  {expoData!.active_builds} ACTIVE
+                </span>
+              )}
+            </div>
+            <button
+              className="btn-ghost"
+              onClick={fetchExpoBuilds}
+              disabled={expoLoading}
+              style={{ fontSize: 12, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}
+            >
+              {expoLoading ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={11} />}
+              {expoData ? "Refresh" : "Load Builds"}
+            </button>
+          </div>
+
+          {expoError && (
+            <div className="flex items-center gap-2" style={{ fontSize: 12, color: "#f87171" }}>
+              <AlertCircle size={12} /> {expoError}
+            </div>
+          )}
+
+          {!expoData && !expoError && !expoLoading && (
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Click Load Builds to see recent EAS build history.</p>
+          )}
+
+          {expoLoading && (
+            <div className="flex items-center gap-2" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Fetching builds...
+            </div>
+          )}
+
+          {expoData && !expoLoading && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {expoData.recent_builds.length === 0 ? (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>No recent builds found.</p>
+              ) : expoData.recent_builds.map((build) => {
+                const statusColor =
+                  build.status === "finished" ? "#34d399"
+                  : build.status === "errored" ? "#f87171"
+                  : build.status === "in-progress" ? "#fbbf24"
+                  : "var(--text-muted)";
+                return (
+                  <div key={build.id} className="flex items-center gap-3" style={{ padding: "7px 10px", borderRadius: 7, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", fontSize: 12 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor, flexShrink: 0 }} />
+                    <span style={{ color: "var(--text-secondary)", flex: 1, fontWeight: 500 }}>{build.project_name}</span>
+                    <span className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>{build.platform}</span>
+                    <span className="font-mono" style={{ fontSize: 10, color: statusColor, textTransform: "uppercase", fontWeight: 700 }}>{build.status}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>
+                      {new Date(build.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ padding: "14px 18px", background: "rgba(99,102,241,0.04)", borderColor: "rgba(99,102,241,0.15)" }}>
         <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
