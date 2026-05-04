@@ -316,6 +316,148 @@ ${content}
 `;
 }
 
+async function generateAiPlaybook(idea: Idea, niche: string): Promise<string> {
+  // Step 1: Define the 8 core workflows for this professional
+  const workflowMsg = await anthropic.messages.create({
+    model: "claude-opus-4-7",
+    max_tokens: 600,
+    messages: [{
+      role: "user",
+      content: `You are creating a professional AI playbook: "${idea.title}"
+For: ${niche}
+Deliverable: ${idea.deliverable}
+
+Identify exactly 8 high-frequency, time-consuming workflows that a ${niche} performs weekly.
+Choose workflows where AI dramatically cuts time (30-60+ minutes saved each).
+These must be specific professional tasks — not generic "write better" or "save time."
+
+Return ONLY a JSON array of 8 objects:
+[{"workflow": "2-5 word workflow name", "time_saved": "e.g. 45 min/week", "pain": "one sentence on why this is painful without AI"}]
+No markdown.`,
+    }],
+  });
+
+  const wfRaw = (workflowMsg.content[0] as { text: string }).text.replace(/```(?:json)?\n?/g, "").trim();
+  const wfMatch = wfRaw.match(/\[[\s\S]*\]/);
+  const workflows: { workflow: string; time_saved: string; pain: string }[] = wfMatch
+    ? JSON.parse(wfMatch[0])
+    : [{ workflow: "Core Workflow", time_saved: "30 min/week", pain: "Time-consuming manual process" }];
+
+  // Step 2: Build each workflow section with embedded prompts
+  const sections: string[] = [];
+  for (const wf of workflows) {
+    const sectionMsg = await anthropic.messages.create({
+      model: "claude-opus-4-7",
+      max_tokens: 1800,
+      messages: [{
+        role: "user",
+        content: `You are writing one section of a professional AI playbook for: ${niche}
+
+WORKFLOW: ${wf.workflow}
+TIME SAVED: ${wf.time_saved}
+WHY IT HURTS: ${wf.pain}
+
+Write a complete workflow section with:
+
+1. OVERVIEW (2-3 sentences): What this workflow is, why it matters, how long it used to take
+2. THE AI APPROACH (3-4 steps): Exact step-by-step process using AI — be specific about what to do
+3. THE PROMPTS (exactly 6 prompts): Each prompt should be:
+   - Complete and ready to use
+   - Specific to ${niche} — not generic
+   - Include [BRACKETS] only for essential variables
+   - Label each: "PROMPT 1: [use case name]" then the full prompt
+4. PRO TIPS (2-3 bullet points): Specific refinements that improve output quality
+5. TIME BREAKDOWN: Before AI vs. after AI in hours/week
+
+Be specific and professional. No fluff. Write as a practitioner.`,
+      }],
+    });
+    const sectionContent = (sectionMsg.content[0] as { text: string }).text.trim();
+    sections.push(
+      `${"═".repeat(60)}\nWORKFLOW ${sections.length + 1}: ${wf.workflow.toUpperCase()}\nTime saved: ${wf.time_saved}\n${"═".repeat(60)}\n\n${sectionContent}`
+    );
+  }
+
+  // Step 3: Generate quick reference card
+  const qrMsg = await anthropic.messages.create({
+    model: "claude-opus-4-7",
+    max_tokens: 800,
+    messages: [{
+      role: "user",
+      content: `Create a "Quick Reference Card" for a ${niche} using this AI playbook.
+Workflows covered: ${workflows.map(w => w.workflow).join(", ")}
+
+Write a single-page cheat sheet with:
+- One-line reminder for each workflow (what prompt type to use, when to use it)
+- Top 3 rules for getting better AI output in a professional context
+- 5 common mistakes to avoid when using AI for ${niche} work
+- "Start here" recommendation for a complete beginner
+
+Format clearly with headers. Under 300 words.`,
+    }],
+  });
+  const quickRef = (qrMsg.content[0] as { text: string }).text.trim();
+
+  const totalTime = workflows.reduce((sum, w) => {
+    const mins = parseInt(w.time_saved) || 30;
+    return sum + mins;
+  }, 0);
+
+  return `${idea.title.toUpperCase()}
+${"═".repeat(60)}
+The Complete AI Playbook for ${niche}
+${idea.hook}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT'S INSIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  8 complete AI workflows built specifically for ${niche}
+  48 ready-to-use prompts with professional context
+  Estimated weekly time savings: ${totalTime}+ minutes
+  Quick reference card for daily use
+
+Each workflow includes: step-by-step AI process, 6 embedded
+prompts, pro tips, and a before/after time breakdown.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLE OF WORKFLOWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${workflows.map((w, i) => `  ${i + 1}. ${w.workflow} — saves ${w.time_saved}`).join("\n")}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANT: HOW TO USE THIS PLAYBOOK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Start with the workflow that costs you the most time this week.
+Read the overview, follow the steps, then copy the relevant
+prompt into ChatGPT, Claude, or any AI assistant. Fill in the
+[BRACKETS] with your specific details. Iterate from there.
+
+Do not try all 8 workflows at once. Master one, then add the next.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE WORKFLOWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+${sections.join("\n\n\n")}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUICK REFERENCE CARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${quickRef}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+END OF ${idea.title.toUpperCase()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+}
+
 // ─── Also generate Gumroad-ready product copy ──────────────────────────────
 
 async function generateProductCopy(idea: Idea, niche: string, productType: string): Promise<{ title: string; description: string }> {
@@ -368,6 +510,7 @@ export async function POST(req: NextRequest) {
           case "pdf_guide": return generatePdfGuide(idea, niche);
           case "social_pack": return generateSocialPack(idea, niche);
           case "checklist": return generateChecklist(idea, niche);
+          case "ai_playbook": return generateAiPlaybook(idea, niche);
           default: return generatePromptPack(idea, niche);
         }
       })(),

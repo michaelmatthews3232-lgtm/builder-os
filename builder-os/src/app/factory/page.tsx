@@ -18,6 +18,14 @@ import {
 
 const PRODUCT_TYPES = [
   {
+    value: "ai_playbook",
+    label: "AI Playbook",
+    description: "8 workflows + 48 prompts for B2B professionals",
+    price: "$39–$79",
+    time: "~12 min",
+    highlight: true,
+  },
+  {
     value: "prompt_pack",
     label: "Prompt Pack",
     description: "300–400 AI prompts organized by use case",

@@ -14,6 +14,8 @@ const PRODUCT_TYPE_CONTEXT: Record<string, string> = {
     "Social media content libraries. Best price range $12–$37. 30–50 ready-to-post pieces (captions, hooks, threads) for a specific platform and audience. Volume play — buyers stack these.",
   checklist:
     "Actionable checklists, frameworks, and decision tools. Best price range $7–$29. One-page to multi-page structured references that replace consulting time. High perceived value for price.",
+  ai_playbook:
+    "Professional AI workflow playbooks for B2B audiences (HR, legal, healthcare, finance, operations). Best price range $39–$79 — the HIGHEST-MARGIN format on Gumroad. 8 complete workflows with embedded prompts and step-by-step implementation. Professional buyers expense these without thinking. Target job titles, not industries. 'The HR Manager's AI Playbook' not 'AI for HR'. Very low competition, high trust threshold means higher price converts better than lower.",
 };
 
 export async function POST(req: NextRequest) {

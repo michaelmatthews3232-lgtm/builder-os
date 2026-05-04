@@ -94,7 +94,7 @@ body {
   background: var(--bg-hover);
 }
 
-.input-base {
+.input-base, .input {
   background: rgba(255,255,255,0.04);
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -106,18 +106,18 @@ body {
   transition: border-color 0.15s, background 0.15s;
   outline: none;
 }
-.input-base:focus {
+.input-base:focus, .input:focus {
   border-color: var(--border-accent);
   background: rgba(99, 102, 241, 0.04);
 }
-.input-base::placeholder { color: var(--text-muted); }
+.input-base::placeholder, .input::placeholder { color: var(--text-muted); }
 
-select.input-base option {
+select.input-base option, select.input option {
   background: #0f1320;
   color: #e8eaf2;
 }
 
-textarea.input-base { resize: vertical; min-height: 80px; }
+textarea.input-base, textarea.input { resize: vertical; min-height: 80px; }
 
 label {
   font-size: 11px;
