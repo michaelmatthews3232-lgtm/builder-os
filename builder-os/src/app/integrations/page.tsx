@@ -259,14 +259,15 @@ export default function IntegrationsPage() {
           const testResult = testResults[service];
           const isEditing = editingService === service;
 
-          // ── Special Gumroad OAuth card ──────────────────────────────────────────
+          // ── Gumroad — simple token paste (from "Generate access token" button) ──
           if (service === "gumroad") {
-            const phase = gumroadPhase;
+            const connected = gumroadPhase === "connected";
+            const editing = editingService === "gumroad";
             return (
               <div
                 key="gumroad"
                 className="card"
-                style={{ padding: "20px 22px", borderColor: phase === "connected" ? "rgba(255,144,232,0.25)" : undefined }}
+                style={{ padding: "20px 22px", borderColor: connected ? "rgba(255,144,232,0.25)" : undefined }}
               >
                 <div className="flex items-start gap-4">
                   <div style={{ width: 38, height: 38, borderRadius: 9, background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ff90e8", flexShrink: 0 }}>
@@ -275,108 +276,73 @@ export default function IntegrationsPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="flex items-center gap-3 mb-1">
                       <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>Gumroad</span>
-                      {phase === "connected" ? (
+                      {connected ? (
                         <span style={{ fontSize: 10, color: "#34d399", background: "rgba(52,211,153,0.1)", padding: "2px 8px", borderRadius: 4, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                           <Check size={9} /> CONNECTED
-                        </span>
-                      ) : phase === "credentials_saved" ? (
-                        <span style={{ fontSize: 10, color: "#fbbf24", background: "rgba(251,191,36,0.1)", padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>
-                          NEEDS OAUTH
                         </span>
                       ) : (
                         <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>NOT SET</span>
                       )}
                     </div>
-                    <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 12 }}>
+                    <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 10 }}>
                       {meta.description}
                     </p>
-
-                    {/* Step 1 — credentials */}
-                    {(phase === "none" || editingGumroadCreds) && (
-                      <div style={{ marginBottom: 12 }}>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-                          Create an application at{" "}
-                          <a href="https://app.gumroad.com/settings/advanced" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
-                            gumroad.com/settings/advanced
-                          </a>
-                          {" "}with redirect URI{" "}
-                          <code style={{ fontSize: 11, color: "#ff90e8", background: "rgba(255,144,232,0.08)", padding: "1px 5px", borderRadius: 4 }}>
-                            https://builder-os-xi.vercel.app/api/integrations/gumroad/callback
-                          </code>
+                    {status?.updated_at && (
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                        Last updated {new Date(status.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                    {editing && (
+                      <div style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+                          Go to Gumroad Settings → Advanced → your application → click <strong style={{ color: "#ff90e8" }}>Generate access token</strong>
                         </p>
-                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                          <input
-                            className="input-base"
-                            style={{ flex: 1, fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}
-                            placeholder="Application ID (client_id)"
-                            value={gumroadClientId}
-                            onChange={(e) => setGumroadClientId(e.target.value)}
-                          />
-                          <input
-                            className="input-base"
-                            style={{ flex: 1, fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}
-                            placeholder="Application Secret (client_secret)"
-                            type="password"
-                            value={gumroadClientSecret}
-                            onChange={(e) => setGumroadClientSecret(e.target.value)}
-                          />
-                          <button
-                            className="btn-primary"
-                            style={{ fontSize: 12, padding: "8px 14px", flexShrink: 0 }}
-                            onClick={saveGumroadCredentials}
-                            disabled={gumroadSaving || !gumroadClientId.trim() || !gumroadClientSecret.trim()}
-                          >
-                            {gumroadSaving ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : "Save"}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <div style={{ position: "relative", flex: 1 }}>
+                            <Lock size={11} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                            <input
+                              className="input-base"
+                              style={{ paddingLeft: 28, fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}
+                              placeholder="Paste access token here"
+                              value={tokenInput}
+                              onChange={(e) => setTokenInput(e.target.value)}
+                              type="password"
+                              autoFocus
+                            />
+                          </div>
+                          <button className="btn-primary" style={{ fontSize: 12, padding: "8px 14px" }} onClick={() => saveToken("gumroad")} disabled={saving || !tokenInput.trim()}>
+                            {saving ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Check size={13} />}
                           </button>
-                          {editingGumroadCreds && (
-                            <button className="btn-ghost" style={{ fontSize: 12, padding: "8px 10px" }} onClick={() => setEditingGumroadCreds(false)}>
-                              <X size={13} />
-                            </button>
-                          )}
+                          <button className="btn-ghost" style={{ fontSize: 12, padding: "8px 10px" }} onClick={() => { setEditingService(null); setTokenInput(""); }}>
+                            <X size={13} />
+                          </button>
                         </div>
                       </div>
                     )}
-
-                    {/* Step 2 — OAuth redirect */}
-                    {phase === "credentials_saved" && !editingGumroadCreds && (
-                      <div className="flex items-center gap-3" style={{ marginBottom: 8 }}>
-                        <button
-                          className="btn-primary"
-                          onClick={connectGumroad}
-                          disabled={connectingGumroad}
-                          style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
-                        >
-                          {connectingGumroad
-                            ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                            : <ShoppingBag size={13} />}
-                          {connectingGumroad ? "Redirecting..." : "Connect with Gumroad →"}
-                        </button>
-                        <button className="btn-ghost" style={{ fontSize: 11 }} onClick={() => setEditingGumroadCreds(true)}>
-                          Update credentials
-                        </button>
-                      </div>
+                  </div>
+                  <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                    {connected && !editing && (
+                      <button
+                        className="btn-ghost"
+                        style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
+                        onClick={() => testIntegration("gumroad")}
+                        disabled={testResults["gumroad"] === "testing"}
+                      >
+                        {testResults["gumroad"] === "testing" ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                          : testResults["gumroad"] === "ok" ? <Check size={11} style={{ color: "#34d399" }} />
+                          : testResults["gumroad"] === "fail" ? <X size={11} style={{ color: "#f87171" }} />
+                          : <RefreshCw size={11} />}
+                        {testResults["gumroad"] === "ok" ? "Working" : testResults["gumroad"] === "fail" ? "Failed" : "Test"}
+                      </button>
                     )}
-
-                    {/* Step 3 — connected */}
-                    {phase === "connected" && !editingGumroadCreds && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="btn-ghost"
-                          style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
-                          onClick={() => testIntegration("gumroad")}
-                          disabled={testResults["gumroad"] === "testing"}
-                        >
-                          {testResults["gumroad"] === "testing" ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                            : testResults["gumroad"] === "ok" ? <Check size={11} style={{ color: "#34d399" }} />
-                            : testResults["gumroad"] === "fail" ? <X size={11} style={{ color: "#f87171" }} />
-                            : <RefreshCw size={11} />}
-                          {testResults["gumroad"] === "ok" ? "Working" : testResults["gumroad"] === "fail" ? "Failed" : "Test"}
-                        </button>
-                        <button className="btn-ghost" style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }} onClick={connectGumroad}>
-                          <RefreshCw size={11} /> Reconnect
-                        </button>
-                      </div>
-                    )}
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
+                      onClick={() => { setEditingService("gumroad"); setTokenInput(""); }}
+                    >
+                      <Edit3 size={11} />
+                      {connected ? "Update" : "Connect"}
+                    </button>
                   </div>
                 </div>
               </div>
