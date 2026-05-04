@@ -20,7 +20,7 @@ async function generatePromptPack(idea: Idea, niche: string): Promise<string> {
   // Step 1: categories
   const catMsg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 600,
+    max_tokens: 800,
     messages: [
       {
         role: "user",
@@ -30,21 +30,28 @@ Deliverable: ${idea.deliverable}
 
 Generate exactly 8 use-case categories for this prompt pack. Each category should address a distinct daily task or challenge the buyer faces.
 
-Return ONLY a JSON array of 8 strings (category names, 2-5 words each). No markdown.`,
+Output ONLY raw JSON — no markdown fences, no commentary, no text before or after.
+Start your response with [ and end with ].
+
+["Category Name", "Category Name", ...]`,
       },
     ],
   });
 
   const catRaw = (catMsg.content[0] as { text: string }).text.replace(/```(?:json)?\n?/g, "").trim();
   const catMatch = catRaw.match(/\[[\s\S]*\]/);
-  const categories: string[] = catMatch ? JSON.parse(catMatch[0]) : ["General Prompts"];
+  if (!catMatch) {
+    console.error("[factory/generate] Prompt pack category parse failed. Raw:", catRaw.slice(0, 500));
+    throw new Error("Failed to generate prompt categories — please try again");
+  }
+  const categories: string[] = JSON.parse(catMatch[0]);
 
   // Step 2: prompts per category (run sequentially to avoid rate limits)
   const sections: string[] = [];
   for (const category of categories) {
     const promptMsg = await anthropic.messages.create({
       model: "claude-opus-4-7",
-      max_tokens: 2000,
+      max_tokens: 5000,
       messages: [
         {
           role: "user",
@@ -59,7 +66,7 @@ Write exactly 40 high-quality AI prompts for this category. Requirements:
 - Be specific, not generic — "Write a cold email to a marketing agency VP who just posted about..." not "Write a cold email"
 - Number each prompt (1–40)
 
-Output just the numbered list. No headers, no intro text.`,
+Output just the numbered list. No headers, no intro text. Write all 40 prompts in full — do not truncate.`,
         },
       ],
     });
@@ -106,7 +113,7 @@ END OF ${idea.title.toUpperCase()}
 async function generateEmailSwipe(idea: Idea, niche: string): Promise<string> {
   const msg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 6000,
+    max_tokens: 8000,
     messages: [
       {
         role: "user",
@@ -169,19 +176,24 @@ For: ${niche}
 Deliverable: ${idea.deliverable}
 
 Create a 10-section guide outline. Each section should be a specific, actionable topic.
-Return ONLY JSON array of section titles. No markdown.`,
+Output ONLY raw JSON — no markdown fences, no text before or after. Start with [ and end with ].
+["Section Title", "Section Title", ...]`,
       },
     ],
   });
 
   const outlineRaw = (outlineMsg.content[0] as { text: string }).text.replace(/```(?:json)?\n?/g, "").trim();
   const outlineMatch = outlineRaw.match(/\[[\s\S]*\]/);
-  const sections: string[] = outlineMatch ? JSON.parse(outlineMatch[0]) : ["Introduction"];
+  if (!outlineMatch) {
+    console.error("[factory/generate] PDF guide outline parse failed. Raw:", outlineRaw.slice(0, 500));
+    throw new Error("Failed to generate guide outline — please try again");
+  }
+  const sections: string[] = JSON.parse(outlineMatch[0]);
 
   // Step 2: write the guide
   const guideMsg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 6000,
+    max_tokens: 7500,
     messages: [
       {
         role: "user",
@@ -225,7 +237,7 @@ ${content}
 async function generateSocialPack(idea: Idea, niche: string): Promise<string> {
   const msg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 6000,
+    max_tokens: 8000,
     messages: [
       {
         role: "user",
@@ -275,7 +287,7 @@ ${content}
 async function generateChecklist(idea: Idea, niche: string): Promise<string> {
   const msg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 4000,
+    max_tokens: 7000,
     messages: [
       {
         role: "user",
@@ -353,7 +365,7 @@ Start your response with [ and end with ].
   for (const wf of workflows) {
     const sectionMsg = await anthropic.messages.create({
       model: "claude-opus-4-7",
-      max_tokens: 1800,
+      max_tokens: 2500,
       messages: [{
         role: "user",
         content: `You are writing one section of a professional AI playbook for: ${niche}
@@ -533,6 +545,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("Factory generate error:", err);
-    return NextResponse.json({ error: "Generation failed — check API key" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : "Generation failed — please try again";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
