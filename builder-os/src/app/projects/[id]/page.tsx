@@ -35,6 +35,7 @@ import {
   UserMinus,
   BookUser,
   Upload,
+  ShoppingBag,
 } from "lucide-react";
 import { format, isPast, isToday, parseISO } from "date-fns";
 
@@ -1377,6 +1378,13 @@ function parseCSV(text: string): ParsedLead[] {
     .filter((r) => r.contact_name || r.contact_info);
 }
 
+interface GumroadData {
+  order_count: number;
+  revenue_total: number;
+  revenue_this_month: number;
+  recent: { id: string; buyer: string; email: string; product: string; amount: number; date: string; order_number: number }[];
+}
+
 const SALES_STATUSES: SalesLeadStatus[] = ["lead", "contacted", "responded", "converted", "lost"];
 
 const SALES_STATUS_CONFIG: Record<SalesLeadStatus, { color: string; bg: string }> = {
@@ -1398,6 +1406,11 @@ function SalesTab({ projectId }: { projectId: string }) {
   const [importPreview, setImportPreview] = useState<ParsedLead[]>([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [gumroadData, setGumroadData] = useState<GumroadData | null>(null);
+  const [gumroadLoading, setGumroadLoading] = useState(true);
+  const [addingFiverr, setAddingFiverr] = useState(false);
+  const [fiverrForm, setFiverrForm] = useState({ buyer: "", amount: "", description: "" });
+  const [savingFiverr, setSavingFiverr] = useState(false);
 
   const fetchLeads = async () => {
     const { data } = await supabase.from("project_sales").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
@@ -1406,7 +1419,37 @@ function SalesTab({ projectId }: { projectId: string }) {
     if (goal && !milestoneGoal) setMilestoneGoal(goal);
   };
 
-  useEffect(() => { fetchLeads(); }, [projectId]);
+  const fetchGumroad = async () => {
+    setGumroadLoading(true);
+    try {
+      const res = await fetch("/api/integrations/gumroad");
+      if (res.ok) setGumroadData(await res.json());
+    } catch { /* not connected */ }
+    setGumroadLoading(false);
+  };
+
+  useEffect(() => {
+    fetchLeads();
+    fetchGumroad();
+  }, [projectId]);
+
+  const addFiverrOrder = async () => {
+    if (!fiverrForm.buyer.trim() && !fiverrForm.amount.trim()) return;
+    setSavingFiverr(true);
+    await supabase.from("project_sales").insert({
+      project_id: projectId,
+      contact_name: fiverrForm.buyer.trim() || null,
+      notes: fiverrForm.description.trim() || null,
+      amount: fiverrForm.amount ? parseFloat(fiverrForm.amount) : null,
+      source: "fiverr",
+      status: "converted" as SalesLeadStatus,
+      milestone_goal: milestoneGoal.trim() || null,
+    });
+    setFiverrForm({ buyer: "", amount: "", description: "" });
+    setAddingFiverr(false);
+    setSavingFiverr(false);
+    fetchLeads();
+  };
 
   const addLead = async () => {
     setSaving(true);
@@ -1477,6 +1520,51 @@ function SalesTab({ projectId }: { projectId: string }) {
 
   return (
     <div>
+      {/* Gumroad panel */}
+      {!gumroadLoading && gumroadData && (
+        <div
+          className="card"
+          style={{ padding: "16px 20px", marginBottom: 16, borderColor: "rgba(255,144,232,0.2)", background: "rgba(255,144,232,0.03)" }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <ShoppingBag size={13} style={{ color: "#ff90e8" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#ff90e8", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              Gumroad Sales
+            </span>
+            <button
+              onClick={fetchGumroad}
+              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 2, fontSize: 11 }}
+            >
+              ↻
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: gumroadData.recent.length > 0 ? 14 : 0 }}>
+            {[
+              { label: "Total Orders", value: gumroadData.order_count.toString() },
+              { label: "All-Time Revenue", value: `$${gumroadData.revenue_total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+              { label: "This Month", value: `$${gumroadData.revenue_this_month.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ textAlign: "center", padding: "10px 0", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
+                <div className="font-mono" style={{ fontSize: 18, fontWeight: 700, color: "#ff90e8", marginBottom: 3 }}>{value}</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          {gumroadData.recent.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {gumroadData.recent.map((sale) => (
+                <div key={sale.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 12 }}>
+                  <span style={{ flex: 1, color: "var(--text-primary)", fontWeight: 500 }}>{sale.buyer}</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{sale.product}</span>
+                  <span className="font-mono" style={{ color: "#34d399", fontWeight: 700 }}>${sale.amount.toFixed(2)}</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11, flexShrink: 0 }}>{sale.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Milestone goal */}
       <div className="card" style={{ padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
         <DollarSign size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
@@ -1544,7 +1632,15 @@ function SalesTab({ projectId }: { projectId: string }) {
             <Upload size={13} style={{ display: "inline", marginRight: 6 }} />
             Import CSV
           </button>
-          <button className="btn-primary" onClick={() => setAdding(true)}>
+          <button
+            className="btn-ghost"
+            onClick={() => { setAddingFiverr(true); setAdding(false); }}
+            style={{ fontSize: 12, color: "#fb923c", borderColor: "rgba(251,146,60,0.25)" }}
+          >
+            <ShoppingBag size={13} style={{ display: "inline", marginRight: 6 }} />
+            Log Fiverr Order
+          </button>
+          <button className="btn-primary" onClick={() => { setAdding(true); setAddingFiverr(false); }}>
             <Plus size={13} style={{ display: "inline", marginRight: 6 }} />
             Add Lead
           </button>
@@ -1614,6 +1710,39 @@ function SalesTab({ projectId }: { projectId: string }) {
         </div>
       )}
 
+      {addingFiverr && (
+        <div className="card" style={{ padding: 18, marginBottom: 16, borderColor: "rgba(251,146,60,0.25)", background: "rgba(251,146,60,0.03)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <ShoppingBag size={13} style={{ color: "#fb923c" }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#fb923c" }}>Log Fiverr Order</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label>Buyer Username / Name</label>
+              <input className="input-base mt-1" placeholder="fiverr_buyer123" value={fiverrForm.buyer} onChange={(e) => setFiverrForm({ ...fiverrForm, buyer: e.target.value })} autoFocus />
+            </div>
+            <div>
+              <label>Order Amount ($)</label>
+              <input className="input-base mt-1" placeholder="150.00" type="number" min="0" step="0.01" value={fiverrForm.amount} onChange={(e) => setFiverrForm({ ...fiverrForm, amount: e.target.value })} />
+            </div>
+            <div>
+              <label>Gig / Description</label>
+              <input className="input-base mt-1" placeholder="AI product photography pack" value={fiverrForm.description} onChange={(e) => setFiverrForm({ ...fiverrForm, description: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setAddingFiverr(false)}>Cancel</button>
+            <button
+              style={{ padding: "8px 16px", background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 7, color: "#fb923c", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              onClick={addFiverrOrder}
+              disabled={savingFiverr}
+            >
+              {savingFiverr ? "Saving..." : "Log Order"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {adding && (
         <div className="card" style={{ padding: 18, marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -1667,9 +1796,18 @@ function SalesTab({ projectId }: { projectId: string }) {
                       <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
                         {lead.contact_name || "Unnamed Lead"}
                       </span>
-                      {lead.source && (
+                      {lead.source === "fiverr" ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fb923c", background: "rgba(251,146,60,0.12)", padding: "1px 6px", borderRadius: 4 }}>
+                          FIVERR
+                        </span>
+                      ) : lead.source ? (
                         <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 4 }}>
                           {lead.source}
+                        </span>
+                      ) : null}
+                      {lead.amount != null && (
+                        <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: "#34d399", marginLeft: "auto" }}>
+                          ${lead.amount.toFixed(2)}
                         </span>
                       )}
                     </div>

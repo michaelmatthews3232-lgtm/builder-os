@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  Github, Globe, Zap, CreditCard, Package,
+  Github, Globe, Zap, CreditCard, Package, ShoppingBag,
   Check, X, Loader2, RefreshCw, Lock, Edit3, AlertCircle,
 } from "lucide-react";
 
@@ -67,6 +67,15 @@ const INTEGRATION_META: Record<string, {
     tokenLabel: "Access Token",
     tokenPlaceholder: "expo_...",
     docsUrl: "https://expo.dev/accounts/[account]/settings/access-tokens",
+  },
+  gumroad: {
+    icon: <ShoppingBag size={18} />,
+    color: "#ff90e8",
+    label: "Gumroad",
+    description: "Pulls sales totals and recent purchases from your Gumroad products — shown in the Sales tab of linked projects.",
+    tokenLabel: "Access Token",
+    tokenPlaceholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    docsUrl: "https://app.gumroad.com/settings/advanced",
   },
 };
 
@@ -135,6 +144,8 @@ export default function IntegrationsPage() {
         res = await fetch("/api/integrations/stripe");
       } else if (service === "expo") {
         res = await fetch("/api/integrations/expo");
+      } else if (service === "gumroad") {
+        res = await fetch("/api/integrations/gumroad");
       } else {
         setTestResults((prev) => ({ ...prev, [service]: "fail" }));
         return;

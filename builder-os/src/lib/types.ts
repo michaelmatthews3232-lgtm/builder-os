@@ -180,6 +180,7 @@ export interface SalesLead {
   notes: string | null;
   milestone_goal: string | null;
   source: string | null;
+  amount: number | null;
   created_at: string;
 }
 
