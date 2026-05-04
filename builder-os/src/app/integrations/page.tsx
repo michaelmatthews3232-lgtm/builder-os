@@ -94,80 +94,15 @@ export default function IntegrationsPage() {
   } | null>(null);
   const [expoLoading, setExpoLoading] = useState(false);
   const [expoError, setExpoError] = useState<string | null>(null);
-  const [gumroadPhase, setGumroadPhase] = useState<"none" | "credentials_saved" | "connected">("none");
-  const [gumroadClientId, setGumroadClientId] = useState("");
-  const [gumroadClientSecret, setGumroadClientSecret] = useState("");
-  const [gumroadSaving, setGumroadSaving] = useState(false);
-  const [connectingGumroad, setConnectingGumroad] = useState(false);
-  const [editingGumroadCreds, setEditingGumroadCreds] = useState(false);
-
-  const fetchGumroadPhase = async () => {
-    try {
-      const res = await fetch("/api/integrations/gumroad");
-      if (res.ok) {
-        setGumroadPhase("connected");
-      } else {
-        const body = await res.json().catch(() => ({}));
-        const msg: string = (body as { error?: string }).error ?? "";
-        setGumroadPhase(msg.includes("OAuth not completed") ? "credentials_saved" : "none");
-      }
-    } catch {
-      setGumroadPhase("none");
-    }
-  };
 
   const fetchStatuses = async () => {
     const res = await fetch("/api/integrations/list");
     const { integrations } = await res.json();
     setStatuses(integrations ?? []);
     setLoading(false);
-    if ((integrations ?? []).find((i: IntegrationStatus) => i.service === "gumroad" && i.enabled)) {
-      fetchGumroadPhase();
-    }
   };
 
-  useEffect(() => {
-    fetchStatuses();
-    if (window.location.search.includes("connected=gumroad")) {
-      setGumroadPhase("connected");
-      window.history.replaceState({}, "", "/integrations");
-    }
-  }, []);
-
-  const saveGumroadCredentials = async () => {
-    if (!gumroadClientId.trim() || !gumroadClientSecret.trim()) return;
-    setGumroadSaving(true);
-    await fetch("/api/integrations/list", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        service: "gumroad",
-        token: JSON.stringify({ client_id: gumroadClientId.trim(), client_secret: gumroadClientSecret.trim() }),
-        enabled: true,
-      }),
-    });
-    setGumroadSaving(false);
-    setEditingGumroadCreds(false);
-    setGumroadClientId("");
-    setGumroadClientSecret("");
-    setGumroadPhase("credentials_saved");
-    fetchStatuses();
-  };
-
-  const connectGumroad = async () => {
-    setConnectingGumroad(true);
-    try {
-      const res = await fetch("/api/integrations/gumroad/authorize");
-      const body = await res.json();
-      if (body.url) {
-        window.location.href = body.url;
-      } else {
-        setConnectingGumroad(false);
-      }
-    } catch {
-      setConnectingGumroad(false);
-    }
-  };
+  useEffect(() => { fetchStatuses(); }, []);
 
   const saveToken = async (service: string) => {
     if (!tokenInput.trim()) return;
@@ -261,7 +196,7 @@ export default function IntegrationsPage() {
 
           // ── Gumroad — simple token paste (from "Generate access token" button) ──
           if (service === "gumroad") {
-            const connected = gumroadPhase === "connected";
+            const connected = connectedServices.has("gumroad");
             const editing = editingService === "gumroad";
             return (
               <div
