@@ -33,8 +33,18 @@ export async function GET() {
       return NextResponse.json({ error: "Gumroad not configured" }, { status: 400 });
     }
 
+    // Token field is JSON: { client_id, client_secret, access_token }
+    let accessToken: string = setting.token;
+    try {
+      const parsed = JSON.parse(setting.token);
+      if (!parsed.access_token) {
+        return NextResponse.json({ error: "Gumroad OAuth not completed — click Connect" }, { status: 400 });
+      }
+      accessToken = parsed.access_token;
+    } catch { /* plain token fallback */ }
+
     const res = await fetch("https://api.gumroad.com/v2/sales", {
-      headers: { Authorization: `Bearer ${setting.token}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) {
