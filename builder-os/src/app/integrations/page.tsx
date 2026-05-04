@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  Github, Globe, Zap, CreditCard, Package, ShoppingBag,
-  Check, X, Loader2, RefreshCw, Lock, Edit3, AlertCircle,
+  Github, Globe, Zap, CreditCard, Package, ShoppingBag, Store,
+  Check, X, Loader2, RefreshCw, Lock, Edit3, AlertCircle, ExternalLink,
 } from "lucide-react";
 
 interface IntegrationStatus {
@@ -77,6 +77,15 @@ const INTEGRATION_META: Record<string, {
     tokenPlaceholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
     docsUrl: "https://app.gumroad.com/settings/advanced",
   },
+  etsy: {
+    icon: <Store size={18} />,
+    color: "#F1641E",
+    label: "Etsy",
+    description: "Pulls sales totals, active listing count, and recent orders from your Etsy shop — shown in the Sales tab of linked projects.",
+    tokenLabel: "Keystring (API Key)",
+    tokenPlaceholder: "xxxxxxxxxxxxxxxxxxxxxxxx",
+    docsUrl: "https://www.etsy.com/developers/your-apps",
+  },
 };
 
 export default function IntegrationsPage() {
@@ -86,6 +95,21 @@ export default function IntegrationsPage() {
   const [tokenInput, setTokenInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, "ok" | "fail" | "testing">>({});
+  const [etsyConnecting, setEtsyConnecting] = useState(false);
+
+  const connectEtsy = async () => {
+    setEtsyConnecting(true);
+    try {
+      const res = await fetch("/api/integrations/etsy/authorize");
+      const { url, error } = await res.json();
+      if (error) { alert(error); setEtsyConnecting(false); return; }
+      window.location.href = url;
+    } catch {
+      alert("Failed to start Etsy authorization");
+      setEtsyConnecting(false);
+    }
+  };
+
   const [expoData, setExpoData] = useState<{
     account: string;
     active_builds: number;
@@ -146,6 +170,8 @@ export default function IntegrationsPage() {
         res = await fetch("/api/integrations/expo");
       } else if (service === "gumroad") {
         res = await fetch("/api/integrations/gumroad");
+      } else if (service === "etsy") {
+        res = await fetch("/api/integrations/etsy");
       } else {
         setTestResults((prev) => ({ ...prev, [service]: "fail" }));
         return;
@@ -193,6 +219,129 @@ export default function IntegrationsPage() {
           const status = statuses.find((s) => s.service === service);
           const testResult = testResults[service];
           const isEditing = editingService === service;
+
+          // ── Etsy — keystring first, then OAuth PKCE ──
+          if (service === "etsy") {
+            const connected = connectedServices.has("etsy");
+            const editing = editingService === "etsy";
+            const testResult = testResults["etsy"];
+            return (
+              <div
+                key="etsy"
+                className="card"
+                style={{ padding: "20px 22px", borderColor: connected ? "rgba(241,100,30,0.25)" : undefined }}
+              >
+                <div className="flex items-start gap-4">
+                  <div style={{ width: 38, height: 38, borderRadius: 9, background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", color: "#F1641E", flexShrink: 0 }}>
+                    <Store size={18} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex items-center gap-3 mb-1">
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>Etsy</span>
+                      {connected ? (
+                        <span style={{ fontSize: 10, color: "#34d399", background: "rgba(52,211,153,0.1)", padding: "2px 8px", borderRadius: 4, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                          <Check size={9} /> CONNECTED
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>NOT SET</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 10 }}>
+                      {meta.description}
+                    </p>
+                    {status?.updated_at && (
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                        Last updated {new Date(status.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                    {editing && (
+                      <div style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+                          Enter your <strong style={{ color: "#F1641E" }}>Keystring</strong> from{" "}
+                          <a href="https://www.etsy.com/developers/your-apps" target="_blank" rel="noreferrer" style={{ color: "#F1641E" }}>etsy.com/developers</a>,
+                          then click Authorize to complete OAuth.
+                        </p>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                          <div style={{ position: "relative", flex: 1 }}>
+                            <Lock size={11} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                            <input
+                              className="input-base"
+                              style={{ paddingLeft: 28, fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}
+                              placeholder="Your Etsy keystring"
+                              value={tokenInput}
+                              onChange={(e) => setTokenInput(e.target.value)}
+                              type="password"
+                              autoFocus
+                            />
+                          </div>
+                          <button className="btn-primary" style={{ fontSize: 12, padding: "8px 14px" }} onClick={() => saveToken("etsy")} disabled={saving || !tokenInput.trim()}>
+                            {saving ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Check size={13} />}
+                          </button>
+                          <button className="btn-ghost" style={{ fontSize: 12, padding: "8px 10px" }} onClick={() => { setEditingService(null); setTokenInput(""); }}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                        {connected && (
+                          <button
+                            className="btn-ghost"
+                            style={{ fontSize: 12, padding: "7px 12px", display: "flex", alignItems: "center", gap: 6, color: "#F1641E", borderColor: "rgba(241,100,30,0.3)" }}
+                            onClick={connectEtsy}
+                            disabled={etsyConnecting}
+                          >
+                            {etsyConnecting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <ExternalLink size={12} />}
+                            Authorize with Etsy
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!connected && !editing && (
+                      <button
+                        className="btn-ghost"
+                        style={{ fontSize: 12, padding: "7px 12px", display: "inline-flex", alignItems: "center", gap: 6, color: "#F1641E", borderColor: "rgba(241,100,30,0.3)" }}
+                        onClick={() => { setEditingService("etsy"); setTokenInput(""); }}
+                      >
+                        <ExternalLink size={12} /> Connect Etsy
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                    {connected && !editing && (
+                      <>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
+                          onClick={() => testIntegration("etsy")}
+                          disabled={testResult === "testing"}
+                        >
+                          {testResult === "testing" ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                            : testResult === "ok" ? <Check size={11} style={{ color: "#34d399" }} />
+                            : testResult === "fail" ? <X size={11} style={{ color: "#f87171" }} />
+                            : <RefreshCw size={11} />}
+                          {testResult === "ok" ? "Working" : testResult === "fail" ? "Failed" : "Test"}
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
+                          onClick={connectEtsy}
+                          disabled={etsyConnecting}
+                        >
+                          {etsyConnecting ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={11} />}
+                          Re-auth
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 11, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}
+                          onClick={() => { setEditingService("etsy"); setTokenInput(""); }}
+                        >
+                          <Edit3 size={11} /> Update
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
 
           // ── Gumroad — simple token paste (from "Generate access token" button) ──
           if (service === "gumroad") {
