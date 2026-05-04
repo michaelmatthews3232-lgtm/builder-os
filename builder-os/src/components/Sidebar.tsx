@@ -15,6 +15,7 @@ import {
   LogOut,
   Users,
   KeyRound,
+  Brain,
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/accounts", label: "Accounts", icon: KeyRound },
   { href: "/contractors", label: "Contractors", icon: Users },
   { href: "/integrations", label: "Integrations", icon: Plug },
+  { href: "/brief", label: "AI Brief", icon: Brain },
 ];
 
 export function Sidebar() {
