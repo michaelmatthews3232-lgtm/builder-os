@@ -16,6 +16,7 @@ import {
   Users,
   KeyRound,
   Brain,
+  Wand2,
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/accounts", label: "Accounts", icon: KeyRound },
   { href: "/contractors", label: "Contractors", icon: Users },
   { href: "/integrations", label: "Integrations", icon: Plug },
+  { href: "/content", label: "Content Studio", icon: Wand2 },
   { href: "/brief", label: "AI Brief", icon: Brain },
 ];
 
