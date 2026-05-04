@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+export const maxDuration = 300;
+
 const anthropic = new Anthropic();
 
 interface Idea {
@@ -320,7 +322,7 @@ async function generateAiPlaybook(idea: Idea, niche: string): Promise<string> {
   // Step 1: Define the 8 core workflows for this professional
   const workflowMsg = await anthropic.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 600,
+    max_tokens: 1200,
     messages: [{
       role: "user",
       content: `You are creating a professional AI playbook: "${idea.title}"
@@ -331,17 +333,20 @@ Identify exactly 8 high-frequency, time-consuming workflows that a ${niche} perf
 Choose workflows where AI dramatically cuts time (30-60+ minutes saved each).
 These must be specific professional tasks — not generic "write better" or "save time."
 
-Return ONLY a JSON array of 8 objects:
-[{"workflow": "2-5 word workflow name", "time_saved": "e.g. 45 min/week", "pain": "one sentence on why this is painful without AI"}]
-No markdown.`,
+Output ONLY raw JSON — no markdown fences, no commentary, no text before or after.
+Start your response with [ and end with ].
+
+[{"workflow": "2-5 word workflow name", "time_saved": "e.g. 45 min/week", "pain": "one sentence on why this is painful without AI"}]`,
     }],
   });
 
   const wfRaw = (workflowMsg.content[0] as { text: string }).text.replace(/```(?:json)?\n?/g, "").trim();
   const wfMatch = wfRaw.match(/\[[\s\S]*\]/);
-  const workflows: { workflow: string; time_saved: string; pain: string }[] = wfMatch
-    ? JSON.parse(wfMatch[0])
-    : [{ workflow: "Core Workflow", time_saved: "30 min/week", pain: "Time-consuming manual process" }];
+  if (!wfMatch) {
+    console.error("[factory/generate] Step 1 parse failed. Raw:", wfRaw.slice(0, 500));
+    throw new Error("Failed to generate workflow list — please try again");
+  }
+  const workflows: { workflow: string; time_saved: string; pain: string }[] = JSON.parse(wfMatch[0]);
 
   // Step 2: Build each workflow section with embedded prompts
   const sections: string[] = [];
