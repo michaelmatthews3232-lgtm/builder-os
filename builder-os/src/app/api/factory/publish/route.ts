@@ -75,27 +75,56 @@ export async function POST(req: NextRequest) {
   const productUrl: string = createData.product.short_url ?? `https://app.gumroad.com/products/${productId}/edit`;
 
   // Step 2: Upload the content file
-  const fileBytes = Buffer.from(content, "utf-8");
+  // Build multipart body manually — more reliable than FormData in Node.js serverless
   const safeFilename = (filename ?? "product.txt").replace(/[^a-z0-9._-]/gi, "-");
+  const fileBytes = Buffer.from(content, "utf-8");
+  const boundary = `FormBoundary${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
 
-  const formData = new FormData();
-  const blob = new Blob([fileBytes], { type: "text/plain; charset=utf-8" });
-  formData.append("file", blob, safeFilename);
+  const preamble = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="${safeFilename}"\r\n` +
+    `Content-Type: text/plain\r\n\r\n`,
+    "utf-8"
+  );
+  const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, "utf-8");
+  const multipartBody = Buffer.concat([preamble, fileBytes, epilogue]);
 
   const uploadRes = await fetch(`https://api.gumroad.com/v2/products/${productId}/product_files`, {
     method: "POST",
-    headers: bearerHeaders,
-    body: formData,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Content-Length": String(multipartBody.length),
+    },
+    body: multipartBody,
   });
 
   let fileUploaded = uploadRes.ok;
   let uploadWarning: string | null = null;
 
   if (!uploadRes.ok) {
-    // Product exists but file upload failed — common with some API versions
-    // User can upload manually; don't block the whole flow
-    uploadWarning = "Product created but file upload failed — upload the .txt file manually in Gumroad dashboard";
-    fileUploaded = false;
+    const errBody = await uploadRes.text().catch(() => "");
+    console.error(`[factory/publish] Gumroad file upload ${uploadRes.status}:`, errBody.slice(0, 300));
+
+    // Try alternative endpoint (some API versions use /files instead of /product_files)
+    const uploadRes2 = await fetch(`https://api.gumroad.com/v2/products/${productId}/files`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": String(multipartBody.length),
+      },
+      body: multipartBody,
+    });
+
+    if (uploadRes2.ok) {
+      fileUploaded = true;
+    } else {
+      const err2 = await uploadRes2.text().catch(() => "");
+      console.error(`[factory/publish] Gumroad alt upload ${uploadRes2.status}:`, err2.slice(0, 300));
+      uploadWarning = "Product created — click \"Download .txt\" below and upload the file manually in the Gumroad editor (Files tab)";
+      fileUploaded = false;
+    }
   }
 
   // Step 3: Return result
