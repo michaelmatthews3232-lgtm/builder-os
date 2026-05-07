@@ -7,7 +7,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const REDIRECT_URI = "https://builder-os-xi.vercel.app/api/integrations/etsy/callback";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://builder-os-xi.vercel.app";
+const REDIRECT_URI = `${BASE_URL}/api/integrations/etsy/callback`;
 const SCOPES = "listings_r listings_w shops_r profile_r";
 
 function generatePkce(): { verifier: string; challenge: string } {

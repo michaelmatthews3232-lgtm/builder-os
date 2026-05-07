@@ -6,8 +6,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const REDIRECT_URI = "https://builder-os-xi.vercel.app/api/integrations/etsy/callback";
-const BASE_URL = "https://builder-os-xi.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "https://builder-os-xi.vercel.app";
+const REDIRECT_URI = `${BASE_URL}/api/integrations/etsy/callback`;
 const ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 const ETSY_API = "https://openapi.etsy.com/v3";
 
